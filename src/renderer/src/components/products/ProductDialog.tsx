@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Combobox } from '@/components/common/Combobox'
 import { Field } from '@/components/common/Field'
 import { UpperInput } from '@/components/common/UpperInput'
 import { cn } from '@/lib/utils'
@@ -230,18 +231,13 @@ export function ProductDialog({
           </Field>
 
           <Field label="UNIT" required error={errors.unit_id}>
-            <Select value={form.unit_id} onValueChange={(v) => set('unit_id', v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="SELECT UNIT" />
-              </SelectTrigger>
-              <SelectContent>
-                {units.map((u) => (
-                  <SelectItem key={u.id} value={String(u.id)}>
-                    {u.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={form.unit_id}
+              onValueChange={(v) => set('unit_id', v)}
+              options={units.map((u) => ({ value: String(u.id), label: u.name }))}
+              placeholder="SELECT UNIT"
+              searchPlaceholder="SEARCH UNIT"
+            />
           </Field>
           <Field label="ADD A NEW UNIT" hint="OPTIONAL — TYPE & CLICK +">
             <div className="flex gap-2">
@@ -310,21 +306,14 @@ export function ProductDialog({
                 {recipe.map((row, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <div className="flex-1">
-                      <Select
+                      <Combobox
                         value={row.component_product_id}
                         onValueChange={(v) => setRecipeRow(i, 'component_product_id', v)}
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue placeholder="SELECT RAW MATERIAL" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {rawMaterials.map((rm) => (
-                            <SelectItem key={rm.id} value={String(rm.id)}>
-                              {rm.name} ({rm.unit_name})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        options={rawMaterials.map((rm) => ({ value: String(rm.id), label: `${rm.name} (${rm.unit_name})` }))}
+                        placeholder="SELECT RAW MATERIAL"
+                        searchPlaceholder="SEARCH RAW MATERIAL"
+                        className="h-8"
+                      />
                     </div>
                     <Input
                       type="number"

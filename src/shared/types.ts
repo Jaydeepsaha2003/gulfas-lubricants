@@ -67,6 +67,7 @@ export interface Party {
   id: number
   code: string
   name: string
+  gst_registered: number // 1 = has GSTIN, 0 = unregistered / no GST
   gstin: string
   address: string
   city: string

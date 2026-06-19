@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Combobox } from '@/components/common/Combobox'
 import { useCompany } from '@/lib/company-context'
 import { formatMoney, todayISO } from '@/lib/utils'
 
@@ -228,18 +228,13 @@ export default function Expenses(): JSX.Element {
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </Field>
             <Field label="CATEGORY" className="col-span-2">
-              <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="SELECT CATEGORY" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                value={categoryId}
+                onValueChange={setCategoryId}
+                options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                placeholder="SELECT CATEGORY"
+                searchPlaceholder="SEARCH CATEGORY"
+              />
             </Field>
             <Field label="ADD A NEW CATEGORY" hint="OPTIONAL" className="col-span-2">
               <div className="flex gap-2">

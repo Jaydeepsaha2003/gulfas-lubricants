@@ -153,6 +153,7 @@ function createSchema(): void {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
+    gst_registered INTEGER NOT NULL DEFAULT 1,
     gstin TEXT NOT NULL DEFAULT '',
     address TEXT NOT NULL DEFAULT '',
     city TEXT NOT NULL DEFAULT '',
@@ -168,6 +169,7 @@ function createSchema(): void {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
+    gst_registered INTEGER NOT NULL DEFAULT 1,
     gstin TEXT NOT NULL DEFAULT '',
     address TEXT NOT NULL DEFAULT '',
     city TEXT NOT NULL DEFAULT '',
@@ -327,6 +329,13 @@ function migrate(): void {
   ensureColumn('sale_items', 'pack_size', 'pack_size REAL NOT NULL DEFAULT 1')
   if (ensureColumn('sale_items', 'base_quantity', 'base_quantity REAL DEFAULT 0')) {
     run('UPDATE sale_items SET base_quantity = quantity')
+  }
+  // Existing parties: treat as registered if they already have a GSTIN, else unregistered.
+  if (ensureColumn('vendors', 'gst_registered', 'gst_registered INTEGER NOT NULL DEFAULT 1')) {
+    run("UPDATE vendors SET gst_registered = CASE WHEN TRIM(gstin) <> '' THEN 1 ELSE 0 END")
+  }
+  if (ensureColumn('customers', 'gst_registered', 'gst_registered INTEGER NOT NULL DEFAULT 1')) {
+    run("UPDATE customers SET gst_registered = CASE WHEN TRIM(gstin) <> '' THEN 1 ELSE 0 END")
   }
 }
 
@@ -553,18 +562,20 @@ function partyRepo(table: 'vendors' | 'customers', prefix: string) {
       return all(`SELECT * FROM ${table} ORDER BY name`)
     },
     create(p: Record<string, SqlValue>) {
+      const reg = p.gst_registered ?? 1
       const id = insert(
-        `INSERT INTO ${table} (code, name, gstin, address, city, state, state_code, phone, email, is_active, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        [p.code, p.name, p.gstin, p.address, p.city, p.state, p.state_code, p.phone, p.email, p.is_active ?? 1, now()]
+        `INSERT INTO ${table} (code, name, gst_registered, gstin, address, city, state, state_code, phone, email, is_active, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [p.code, p.name, reg, reg ? p.gstin : '', p.address, p.city, p.state, p.state_code, p.phone, p.email, p.is_active ?? 1, now()]
       )
       save()
       return one(`SELECT * FROM ${table} WHERE id = ?`, [id])
     },
     update(id: number, p: Record<string, SqlValue>) {
+      const reg = p.gst_registered ?? 1
       run(
-        `UPDATE ${table} SET code=?, name=?, gstin=?, address=?, city=?, state=?, state_code=?, phone=?, email=?, is_active=? WHERE id=?`,
-        [p.code, p.name, p.gstin, p.address, p.city, p.state, p.state_code, p.phone, p.email, p.is_active ?? 1, id]
+        `UPDATE ${table} SET code=?, name=?, gst_registered=?, gstin=?, address=?, city=?, state=?, state_code=?, phone=?, email=?, is_active=? WHERE id=?`,
+        [p.code, p.name, reg, reg ? p.gstin : '', p.address, p.city, p.state, p.state_code, p.phone, p.email, p.is_active ?? 1, id]
       )
       save()
       return one(`SELECT * FROM ${table} WHERE id = ?`, [id])

@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Combobox } from '@/components/common/Combobox'
 import { useCompany } from '@/lib/company-context'
 import { formatMoney, formatQty, todayISO } from '@/lib/utils'
 import type { Product } from '@shared/types'
@@ -295,18 +295,13 @@ export default function Production(): JSX.Element {
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </Field>
             <Field label="FINISHED PRODUCT" required className="col-span-2">
-              <Select value={productId} onValueChange={(v) => { setProductId(v); if (!isEdit) setOutputQty('1') }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="SELECT FINISHED PRODUCT" />
-                </SelectTrigger>
-                <SelectContent>
-                  {finished.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
-                      {p.name} ({p.unit_name})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                value={productId}
+                onValueChange={(v) => { setProductId(v); if (!isEdit) setOutputQty('1') }}
+                options={finished.map((p) => ({ value: String(p.id), label: `${p.name} (${p.unit_name})` }))}
+                placeholder="SELECT FINISHED PRODUCT"
+                searchPlaceholder="SEARCH FINISHED PRODUCT"
+              />
             </Field>
             <Field label="QUANTITY TO PRODUCE" required>
               <Input type="number" min="0" step="0.001" value={outputQty} onChange={(e) => setOutputQty(e.target.value)} />

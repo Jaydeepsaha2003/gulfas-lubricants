@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Combobox } from '@/components/common/Combobox'
 import { Field } from '@/components/common/Field'
 import { useCompany } from '@/lib/company-context'
 import { formatMoney, todayISO } from '@/lib/utils'
@@ -95,6 +96,10 @@ export function TransactionDialog({
   const party = parties.find((p) => String(p.id) === partyId)
   const interState = !!party?.state_code && party.state_code !== (company?.state_code || '')
   const totals = summarize(lines, gstMode, interState)
+  const partyOptions = parties
+    .filter((p) => p.is_active)
+    .map((p) => ({ value: String(p.id), label: `${p.name}${p.state_code ? ` (${p.state_code})` : ''}` }))
+  const productOptions = products.map((p) => ({ value: String(p.id), label: `${p.name} (${p.unit_name})` }))
   const showUom = !isPurchase
   const gridCls = showUom
     ? 'grid-cols-[1fr_78px_68px_92px_56px_100px_32px]'
@@ -222,26 +227,14 @@ export function TransactionDialog({
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
           <Field label={isPurchase ? 'VENDOR' : 'CUSTOMER'} required className="col-span-2">
-            <Select value={partyId} onValueChange={setPartyId}>
-              <SelectTrigger>
-                <SelectValue placeholder={`SELECT ${isPurchase ? 'VENDOR' : 'CUSTOMER'}`} />
-              </SelectTrigger>
-              <SelectContent>
-                {parties.filter((p) => p.is_active).length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">
-                    NO {isPurchase ? 'VENDORS' : 'CUSTOMERS'} — ADD ONE FIRST
-                  </div>
-                ) : (
-                  parties
-                    .filter((p) => p.is_active)
-                    .map((p) => (
-                      <SelectItem key={p.id} value={String(p.id)}>
-                        {p.name} {p.state_code ? `(${p.state_code})` : ''}
-                      </SelectItem>
-                    ))
-                )}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={partyId}
+              onValueChange={setPartyId}
+              options={partyOptions}
+              placeholder={`SELECT ${isPurchase ? 'VENDOR' : 'CUSTOMER'}`}
+              searchPlaceholder={`SEARCH ${isPurchase ? 'VENDOR' : 'CUSTOMER'}`}
+              emptyText={`NO ${isPurchase ? 'VENDORS' : 'CUSTOMERS'} — ADD ONE FIRST`}
+            />
           </Field>
           <Field label="GST PRICING">
             <Select value={gstMode} onValueChange={(v) => setGstMode(v as any)}>
@@ -286,18 +279,14 @@ export function TransactionDialog({
               const boxAvailable = showUom && packSize > 1
               return (
                 <div key={i} className={`grid items-center gap-2 ${gridCls}`}>
-                  <Select value={l.product_id ? String(l.product_id) : ''} onValueChange={(v) => onPickProduct(i, v)}>
-                    <SelectTrigger className="h-8">
-                      <SelectValue placeholder="SELECT PRODUCT" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {products.map((p) => (
-                        <SelectItem key={p.id} value={String(p.id)}>
-                          {p.name} ({p.unit_name})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    value={l.product_id ? String(l.product_id) : ''}
+                    onValueChange={(v) => onPickProduct(i, v)}
+                    options={productOptions}
+                    placeholder="SELECT PRODUCT"
+                    searchPlaceholder="SEARCH PRODUCT"
+                    className="h-8"
+                  />
                   {showUom && (
                     <Select value={l.uom || 'EACH'} onValueChange={(v) => onUomChange(i, v as 'EACH' | 'BOX')} disabled={!boxAvailable}>
                       <SelectTrigger className="h-8">

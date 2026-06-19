@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import type { Party } from '@shared/types'
 
@@ -42,6 +43,7 @@ interface PartyMasterProps {
 const emptyForm = (): Omit<Party, 'id' | 'created_at'> => ({
   code: '',
   name: '',
+  gst_registered: 1,
   gstin: '',
   address: '',
   city: '',
@@ -111,10 +113,12 @@ export function PartyMaster({ api, title, noun, icon, sheetName }: PartyMasterPr
     }
     setSaving(true)
     try {
+      const registered = form.gst_registered ? 1 : 0
       const payload = {
         code: form.code.trim().toUpperCase(),
         name: form.name.trim().toUpperCase(),
-        gstin: form.gstin.trim().toUpperCase(),
+        gst_registered: registered,
+        gstin: registered ? form.gstin.trim().toUpperCase() : '',
         address: form.address.trim().toUpperCase(),
         city: form.city.trim().toUpperCase(),
         state: form.state.trim().toUpperCase(),
@@ -154,6 +158,7 @@ export function PartyMaster({ api, title, noun, icon, sheetName }: PartyMasterPr
         [
           { header: 'CODE', key: 'code', width: 16 },
           { header: 'NAME', key: 'name', width: 30 },
+          { header: 'GST_STATUS', key: 'gst_status', width: 16 },
           { header: 'GSTIN', key: 'gstin', width: 18 },
           { header: 'ADDRESS', key: 'address', width: 30 },
           { header: 'CITY', key: 'city', width: 16 },
@@ -162,7 +167,7 @@ export function PartyMaster({ api, title, noun, icon, sheetName }: PartyMasterPr
           { header: 'PHONE', key: 'phone', width: 16 },
           { header: 'EMAIL', key: 'email', width: 24 }
         ],
-        filtered
+        filtered.map((p) => ({ ...p, gst_status: p.gst_registered ? 'REGISTERED' : 'UNREGISTERED' }))
       )
       if (res.saved) toast.success(`${noun} LIST EXPORTED`)
     } catch (e: any) {
@@ -239,7 +244,13 @@ export function PartyMaster({ api, title, noun, icon, sheetName }: PartyMasterPr
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{p.gstin || '—'}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {p.gst_registered ? (
+                        p.gstin || '—'
+                      ) : (
+                        <Badge variant="secondary" className="font-sans">NO GST</Badge>
+                      )}
+                    </TableCell>
                     <TableCell>{p.city || '—'}</TableCell>
                     <TableCell>
                       {p.state || '—'}
@@ -284,10 +295,30 @@ export function PartyMaster({ api, title, noun, icon, sheetName }: PartyMasterPr
             <Field label={`${noun} NAME`} required error={errors.name} className="col-span-2">
               <UpperInput value={form.name} onChange={(e) => set('name', e.target.value)} />
             </Field>
-            <Field label="GSTIN">
-              <UpperInput value={form.gstin} onChange={(e) => set('gstin', e.target.value)} maxLength={15} />
+            <Field label="GST STATUS" required hint="PICK 'NO GST' FOR UNREGISTERED PARTIES">
+              <Select
+                value={form.gst_registered ? 'REGISTERED' : 'UNREGISTERED'}
+                onValueChange={(v) => set('gst_registered', v === 'REGISTERED' ? 1 : 0)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="REGISTERED">GST REGISTERED</SelectItem>
+                  <SelectItem value="UNREGISTERED">UNREGISTERED / NO GST</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
-            <Field label="EMAIL">
+            <Field label="GSTIN" hint={form.gst_registered ? undefined : 'NOT APPLICABLE'}>
+              <UpperInput
+                value={form.gst_registered ? form.gstin : ''}
+                onChange={(e) => set('gstin', e.target.value)}
+                maxLength={15}
+                disabled={!form.gst_registered}
+                placeholder={form.gst_registered ? '22AAAAA0000A1Z5' : 'NO GST'}
+              />
+            </Field>
+            <Field label="EMAIL" className="col-span-2">
               <Input
                 type="email"
                 value={form.email}
