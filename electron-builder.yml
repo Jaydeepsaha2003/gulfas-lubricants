@@ -1,0 +1,41 @@
+appId: com.gulfas.lubricants
+productName: Gulfas Lubricants
+copyright: Copyright © 2026 Gulfas Lubricants
+
+directories:
+  output: release
+  buildResources: build
+
+# Use exclusions only, so electron-builder still auto-includes `out/` and the
+# production node_modules (sql.js + exceljs are required at runtime).
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintignore,.gitignore,.prettierignore,.editorconfig}'
+  - '!{.env,.env.*,.npmrc}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{postcss.config.js,tailwind.config.js}'
+  - '!{CLAUDE.md,README.md}'
+  - '!{npm-install.log,dev.log}'
+  - '!_*.cjs'
+  - '!.github/**'
+  - '!release/**'
+
+# Keep the SQLite WASM readable on disk inside the packaged app.
+asarUnpack:
+  - '**/node_modules/sql.js/dist/sql-wasm.wasm'
+
+win:
+  target:
+    - nsis
+  artifactName: Gulfas-Lubricants-${version}-Setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Gulfas Lubricants
+  uninstallDisplayName: Gulfas Lubricants
