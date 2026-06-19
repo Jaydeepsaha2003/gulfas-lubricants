@@ -59,6 +59,9 @@ so renderer code can just `try/await/catch` and `toast.error(e.message)`.
 3. **Excel everywhere.** Every master/entry screen should offer Download (export), a Template, and
    Upload (import). Use `window.api.excel.*`.
 4. **Opening stock** is supported via `openingStockRepo.save` → creates `OPENING` FIFO lots.
+5. **Master codes are auto-generated** and read-only in the UI — `productRepo.nextCode(type)`
+   (`RM-####` / `FG-####`), `vendorRepo.nextCode()` (`VEN-####`), `customerRepo.nextCode()`
+   (`CUS-####`). Sequence = max existing suffix + 1.
 
 ## Business rules
 

@@ -113,6 +113,15 @@ export function ProductDialog({
     }
   }, [open, product, units])
 
+  // Auto-generate the product code for new products (prefix follows the type).
+  useEffect(() => {
+    if (!open || product) return
+    window.api.products
+      .nextCode(form.type)
+      .then((c) => setForm((f) => ({ ...f, code: c })))
+      .catch(() => {})
+  }, [open, product, form.type])
+
   const set = (key: keyof FormState, value: string): void => {
     setForm((f) => ({ ...f, [key]: value }))
     if (errors[key]) setErrors((e) => ({ ...e, [key]: '' }))
@@ -140,7 +149,6 @@ export function ProductDialog({
 
   const save = async (): Promise<void> => {
     const errs: Record<string, string> = {}
-    if (!form.code.trim()) errs.code = 'REQUIRED'
     if (!form.name.trim()) errs.name = 'REQUIRED'
     if (!form.unit_id) errs.unit_id = 'REQUIRED'
     if (Object.keys(errs).length) {
@@ -199,8 +207,8 @@ export function ProductDialog({
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="PRODUCT CODE" required error={errors.code}>
-            <UpperInput value={form.code} onChange={(e) => set('code', e.target.value)} placeholder="FG-ENGINE-OIL-1L" />
+          <Field label="PRODUCT CODE" hint="AUTO-GENERATED">
+            <Input value={form.code} readOnly disabled className="font-mono" placeholder="AUTO" />
           </Field>
           <Field label="TYPE" required>
             <Select value={form.type} onValueChange={(v) => set('type', v)}>

@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import type { Party } from '@shared/types'
 
 interface PartyApi {
+  nextCode: () => Promise<string>
   list: () => Promise<any[]>
   create: (payload: any) => Promise<any>
   update: (id: number, payload: any) => Promise<any>
@@ -77,10 +78,16 @@ export function PartyMaster({ api, title, noun, icon, sheetName }: PartyMasterPr
     return rows.filter((r) => (term ? r.name.includes(term) || r.code.includes(term) : true))
   }, [rows, q])
 
-  const openNew = (): void => {
+  const openNew = async (): Promise<void> => {
     setEditing(null)
-    setForm(emptyForm())
     setErrors({})
+    let code = ''
+    try {
+      code = await api.nextCode()
+    } catch {
+      /* ignore */
+    }
+    setForm({ ...emptyForm(), code })
     setDialogOpen(true)
   }
   const openEdit = (p: Party): void => {
@@ -96,7 +103,6 @@ export function PartyMaster({ api, title, noun, icon, sheetName }: PartyMasterPr
 
   const save = async (): Promise<void> => {
     const errs: Record<string, string> = {}
-    if (!String(form.code).trim()) errs.code = 'REQUIRED'
     if (!String(form.name).trim()) errs.name = 'REQUIRED'
     if (Object.keys(errs).length) {
       setErrors(errs)
@@ -175,7 +181,7 @@ export function PartyMaster({ api, title, noun, icon, sheetName }: PartyMasterPr
             <Button variant="outline" onClick={exportExcel} disabled={rows.length === 0}>
               <Download /> EXPORT
             </Button>
-            <Button onClick={openNew}>
+            <Button onClick={() => void openNew()}>
               <Plus /> NEW {noun}
             </Button>
           </>
@@ -269,8 +275,8 @@ export function PartyMaster({ api, title, noun, icon, sheetName }: PartyMasterPr
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label={`${noun} CODE`} required error={errors.code}>
-              <UpperInput value={form.code} onChange={(e) => set('code', e.target.value)} placeholder={`${noun.slice(0, 3)}-001`} />
+            <Field label={`${noun} CODE`} hint="AUTO-GENERATED">
+              <Input value={form.code} readOnly disabled className="font-mono" placeholder="AUTO" />
             </Field>
             <Field label="PHONE">
               <Input value={form.phone} onChange={(e) => set('phone', e.target.value)} inputMode="tel" />

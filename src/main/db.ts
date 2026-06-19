@@ -388,6 +388,20 @@ export function consumeFIFO(
 // Repositories
 // ---------------------------------------------------------------------------
 
+/** Next sequential code for a master table, e.g. RM-0001 / FG-0003 / VEN-0002. */
+function nextCode(table: string, prefix: string): string {
+  const rows = all<{ code: string }>(`SELECT code FROM ${table} WHERE code LIKE ?`, [`${prefix}-%`])
+  let max = 0
+  for (const r of rows) {
+    const m = /-(\d+)\s*$/.exec(r.code || '')
+    if (m) {
+      const n = parseInt(m[1], 10)
+      if (n > max) max = n
+    }
+  }
+  return `${prefix}-${String(max + 1).padStart(4, '0')}`
+}
+
 export const companyRepo = {
   get() {
     return one('SELECT * FROM company WHERE id = 1')
@@ -420,6 +434,9 @@ export const unitRepo = {
 }
 
 export const productRepo = {
+  nextCode(type: string) {
+    return nextCode('products', type === 'FINISHED' ? 'FG' : 'RM')
+  },
   list(type?: string) {
     const sql = `SELECT p.*, u.name AS unit_name FROM products p
                  JOIN units u ON u.id = p.unit_id
@@ -501,8 +518,11 @@ export const recipeRepo = {
   }
 }
 
-function partyRepo(table: 'vendors' | 'customers') {
+function partyRepo(table: 'vendors' | 'customers', prefix: string) {
   return {
+    nextCode() {
+      return nextCode(table, prefix)
+    },
     list() {
       return all(`SELECT * FROM ${table} ORDER BY name`)
     },
@@ -531,8 +551,8 @@ function partyRepo(table: 'vendors' | 'customers') {
   }
 }
 
-export const vendorRepo = partyRepo('vendors')
-export const customerRepo = partyRepo('customers')
+export const vendorRepo = partyRepo('vendors', 'VEN')
+export const customerRepo = partyRepo('customers', 'CUS')
 
 export const inventoryRepo = {
   list(type?: string) {
@@ -868,6 +888,89 @@ export const reportRepo = {
       `SELECT substr(sale_date,1,7) AS ym, SUM(taxable_total) AS revenue, SUM(cogs) AS cogs
        FROM sales GROUP BY ym ORDER BY ym ASC`
     )
+  },
+  /** Everything the dashboard needs for a date range, in one call. */
+  dashboard(from?: string, to?: string) {
+    const f = from || '0001-01-01'
+    const t = to || '9999-12-31'
+
+    const sales = one<{ rev: number; cogs: number; cnt: number }>(
+      'SELECT COALESCE(SUM(taxable_total),0) AS rev, COALESCE(SUM(cogs),0) AS cogs, COUNT(*) AS cnt FROM sales WHERE sale_date BETWEEN ? AND ?',
+      [f, t]
+    )!
+    const exp = one<{ amt: number }>('SELECT COALESCE(SUM(amount),0) AS amt FROM expenses WHERE expense_date BETWEEN ? AND ?', [f, t])!
+    const purch = one<{ amt: number; cnt: number }>(
+      'SELECT COALESCE(SUM(taxable_total),0) AS amt, COUNT(*) AS cnt FROM purchases WHERE purchase_date BETWEEN ? AND ?',
+      [f, t]
+    )!
+    const units = one<{ q: number }>(
+      'SELECT COALESCE(SUM(si.quantity),0) AS q FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.sale_date BETWEEN ? AND ?',
+      [f, t]
+    )!
+    const grossProfit = sales.rev - sales.cogs
+
+    const salesM = all<{ ym: string; revenue: number; cogs: number }>(
+      'SELECT substr(sale_date,1,7) AS ym, SUM(taxable_total) AS revenue, SUM(cogs) AS cogs FROM sales WHERE sale_date BETWEEN ? AND ? GROUP BY ym',
+      [f, t]
+    )
+    const expM = all<{ ym: string; amt: number }>(
+      'SELECT substr(expense_date,1,7) AS ym, SUM(amount) AS amt FROM expenses WHERE expense_date BETWEEN ? AND ? GROUP BY ym',
+      [f, t]
+    )
+    const mmap: Record<string, { ym: string; revenue: number; cogs: number; expenses: number }> = {}
+    for (const r of salesM) mmap[r.ym] = { ym: r.ym, revenue: r.revenue || 0, cogs: r.cogs || 0, expenses: 0 }
+    for (const r of expM) {
+      if (!mmap[r.ym]) mmap[r.ym] = { ym: r.ym, revenue: 0, cogs: 0, expenses: 0 }
+      mmap[r.ym].expenses = r.amt || 0
+    }
+    const monthly = Object.keys(mmap)
+      .sort()
+      .map((k) => {
+        const m = mmap[k]
+        const gross = m.revenue - m.cogs
+        return { ym: k, revenue: m.revenue, cogs: m.cogs, expenses: m.expenses, gross, net: gross - m.expenses }
+      })
+
+    const topProducts = all(
+      `SELECT p.name, SUM(si.quantity) AS qty, SUM(si.taxable_value) AS revenue, SUM(si.taxable_value - si.cogs) AS profit
+       FROM sale_items si JOIN products p ON p.id = si.product_id JOIN sales s ON s.id = si.sale_id
+       WHERE s.sale_date BETWEEN ? AND ? GROUP BY si.product_id ORDER BY revenue DESC LIMIT 8`,
+      [f, t]
+    )
+    const salesByCustomer = all(
+      `SELECT c.name, SUM(s.taxable_total) AS revenue FROM sales s JOIN customers c ON c.id = s.customer_id
+       WHERE s.sale_date BETWEEN ? AND ? GROUP BY s.customer_id ORDER BY revenue DESC LIMIT 6`,
+      [f, t]
+    )
+    const expenseByCategory = all(
+      `SELECT COALESCE(c.name,'UNCATEGORISED') AS name, SUM(e.amount) AS amount
+       FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id
+       WHERE e.expense_date BETWEEN ? AND ? GROUP BY c.id ORDER BY amount DESC`,
+      [f, t]
+    )
+    const stockByType = all(
+      `SELECT p.type, COALESCE(SUM(l.qty_remaining * l.unit_cost),0) AS value
+       FROM products p LEFT JOIN stock_lots l ON l.product_id = p.id AND l.qty_remaining > 0
+       GROUP BY p.type`
+    )
+
+    return {
+      kpis: {
+        revenue: sales.rev,
+        cogs: sales.cogs,
+        gross_profit: grossProfit,
+        expenses: exp.amt,
+        net_profit: grossProfit - exp.amt,
+        sales_count: sales.cnt,
+        purchases_total: purch.amt,
+        units_sold: units.q
+      },
+      monthly,
+      topProducts,
+      salesByCustomer,
+      expenseByCategory,
+      stockByType
+    }
   }
 }
 

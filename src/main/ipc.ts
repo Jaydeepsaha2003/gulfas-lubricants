@@ -44,6 +44,7 @@ export function registerIpc(): void {
   handle('units:create', (_e, name: string) => unitRepo.create(name))
 
   // ---- Products ----
+  handle('products:nextCode', (_e, type: string) => productRepo.nextCode(type))
   handle('products:list', (_e, type?: string) => productRepo.list(type))
   handle('products:get', (_e, id: number) => productRepo.get(id))
   handle('products:create', (_e, payload) => productRepo.create(payload))
@@ -55,12 +56,14 @@ export function registerIpc(): void {
   handle('recipes:save', (_e, productId: number, lines) => recipeRepo.save(productId, lines))
 
   // ---- Vendors ----
+  handle('vendors:nextCode', () => vendorRepo.nextCode())
   handle('vendors:list', () => vendorRepo.list())
   handle('vendors:create', (_e, payload) => vendorRepo.create(payload))
   handle('vendors:update', (_e, id: number, payload) => vendorRepo.update(id, payload))
   handle('vendors:remove', (_e, id: number) => vendorRepo.remove(id))
 
   // ---- Customers ----
+  handle('customers:nextCode', () => customerRepo.nextCode())
   handle('customers:list', () => customerRepo.list())
   handle('customers:create', (_e, payload) => customerRepo.create(payload))
   handle('customers:update', (_e, id: number, payload) => customerRepo.update(id, payload))
@@ -101,6 +104,7 @@ export function registerIpc(): void {
   // ---- Reports ----
   handle('reports:pnl', (_e, from?: string, to?: string) => reportRepo.pnl(from, to))
   handle('reports:monthly', () => reportRepo.monthly())
+  handle('reports:dashboard', (_e, from?: string, to?: string) => reportRepo.dashboard(from, to))
 
   // ---- Excel ----
   handle('excel:exportProducts', (e) => exportProducts(winOf(e)))

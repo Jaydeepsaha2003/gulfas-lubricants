@@ -19,6 +19,7 @@ const api = {
     create: (name: string) => invoke<any>('units:create', name)
   },
   products: {
+    nextCode: (type: string) => invoke<string>('products:nextCode', type),
     list: (type?: string) => invoke<any[]>('products:list', type),
     get: (id: number) => invoke<any>('products:get', id),
     create: (payload: any) => invoke<any>('products:create', payload),
@@ -30,12 +31,14 @@ const api = {
     save: (productId: number, lines: any[]) => invoke<any[]>('recipes:save', productId, lines)
   },
   vendors: {
+    nextCode: () => invoke<string>('vendors:nextCode'),
     list: () => invoke<any[]>('vendors:list'),
     create: (payload: any) => invoke<any>('vendors:create', payload),
     update: (id: number, payload: any) => invoke<any>('vendors:update', id, payload),
     remove: (id: number) => invoke<{ ok: boolean }>('vendors:remove', id)
   },
   customers: {
+    nextCode: () => invoke<string>('customers:nextCode'),
     list: () => invoke<any[]>('customers:list'),
     create: (payload: any) => invoke<any>('customers:create', payload),
     update: (id: number, payload: any) => invoke<any>('customers:update', id, payload),
@@ -71,7 +74,8 @@ const api = {
   },
   reports: {
     pnl: (from?: string, to?: string) => invoke<any>('reports:pnl', from, to),
-    monthly: () => invoke<any[]>('reports:monthly')
+    monthly: () => invoke<any[]>('reports:monthly'),
+    dashboard: (from?: string, to?: string) => invoke<any>('reports:dashboard', from, to)
   },
   openingStock: {
     save: (rows: any[]) => invoke<{ inserted: number }>('openingStock:save', rows)
