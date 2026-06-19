@@ -9,9 +9,13 @@ inventory and profit/loss — all offline, with your data stored on your own mac
 - **Dashboard** — stock value, low-stock alerts, getting-started checklist
 - **Product Master** — raw materials & finished products, **recipes (Bill of Materials)**, **opening stock**, Excel import/export
 - **Vendors & Customers** — with GSTIN and state for correct GST treatment
+- **Purchase** — multi-vendor purchase entry; each line creates a dated FIFO stock lot with GST
+- **Production** — run a batch against a recipe; raw materials are consumed oldest-first and finished goods are costed automatically
+- **Sales** — GST invoices with CGST/SGST (intra-state) or IGST (inter-state); cost of goods from FIFO so per-invoice profit is accurate
 - **Inventory** — live stock valued at **FIFO** cost, Raw / Finished views, Excel export
+- **Business Expenses** — categorised running costs
+- **Profit & Loss** — revenue − COGS − expenses for any date range, with a monthly revenue/cost chart
 - **Settings** — company profile, logo, address, **Full India GST** (HSN, CGST/SGST/IGST), inclusive/exclusive pricing
-- _Coming next:_ Purchase, Production, Sales, Profit/Loss, Business Expenses
 
 Built-in conventions: every text field is stored **UPPERCASE**, mandatory fields are marked with a
 red **\***, and Excel download/upload is available on data screens.

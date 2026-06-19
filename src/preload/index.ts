@@ -44,6 +44,35 @@ const api = {
   inventory: {
     list: (type?: string) => invoke<any[]>('inventory:list', type)
   },
+  purchases: {
+    list: () => invoke<any[]>('purchases:list'),
+    nextVoucher: () => invoke<string>('purchases:nextVoucher'),
+    create: (payload: any) => invoke<any>('purchases:create', payload)
+  },
+  productions: {
+    list: () => invoke<any[]>('productions:list'),
+    nextVoucher: () => invoke<string>('productions:nextVoucher'),
+    preview: (productId: number, outputQty: number) =>
+      invoke<any[]>('productions:preview', productId, outputQty),
+    create: (payload: any) => invoke<any>('productions:create', payload)
+  },
+  sales: {
+    list: () => invoke<any[]>('sales:list'),
+    nextInvoice: () => invoke<string>('sales:nextInvoice'),
+    create: (payload: any) => invoke<any>('sales:create', payload)
+  },
+  expenses: {
+    list: () => invoke<any[]>('expenses:list'),
+    categories: () => invoke<any[]>('expenses:categories'),
+    createCategory: (name: string) => invoke<any>('expenses:createCategory', name),
+    nextVoucher: () => invoke<string>('expenses:nextVoucher'),
+    create: (payload: any) => invoke<any>('expenses:create', payload),
+    remove: (id: number) => invoke<{ ok: boolean }>('expenses:remove', id)
+  },
+  reports: {
+    pnl: (from?: string, to?: string) => invoke<any>('reports:pnl', from, to),
+    monthly: () => invoke<any[]>('reports:monthly')
+  },
   openingStock: {
     save: (rows: any[]) => invoke<{ inserted: number }>('openingStock:save', rows)
   },

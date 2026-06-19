@@ -566,4 +566,309 @@ export const openingStockRepo = {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Transactions: purchase / production / sales / expenses / reports
+// ---------------------------------------------------------------------------
+
+function seq(table: string, prefix: string): string {
+  const c = one<{ c: number }>(`SELECT COUNT(*) AS c FROM ${table}`)
+  return `${prefix}-${String((c?.c ?? 0) + 1).padStart(4, '0')}`
+}
+
+interface LineCalc {
+  taxable: number
+  cgst: number
+  sgst: number
+  igst: number
+  lineTotal: number
+  unitCost: number
+}
+
+/** GST-aware line math. interState => IGST, else CGST+SGST. */
+function computeLine(
+  qty: number,
+  rate: number,
+  gstRate: number,
+  mode: string,
+  interState: boolean
+): LineCalc {
+  const gross = qty * rate
+  let taxable: number
+  let tax: number
+  if (mode === 'INCLUSIVE') {
+    taxable = gross / (1 + gstRate / 100)
+    tax = gross - taxable
+  } else {
+    taxable = gross
+    tax = (taxable * gstRate) / 100
+  }
+  return {
+    taxable,
+    cgst: interState ? 0 : tax / 2,
+    sgst: interState ? 0 : tax / 2,
+    igst: interState ? tax : 0,
+    lineTotal: taxable + tax,
+    unitCost: qty > 0 ? taxable / qty : 0
+  }
+}
+
+function companyStateCode(): string {
+  return one<{ state_code: string }>('SELECT state_code FROM company WHERE id = 1')?.state_code ?? ''
+}
+
+function available(productId: number): number {
+  return (
+    one<{ q: number }>(
+      'SELECT COALESCE(SUM(qty_remaining),0) AS q FROM stock_lots WHERE product_id = ?',
+      [productId]
+    )?.q ?? 0
+  )
+}
+
+function nameOf(productId: number): string {
+  return one<{ name: string }>('SELECT name FROM products WHERE id = ?', [productId])?.name ?? '#' + productId
+}
+
+export const purchaseRepo = {
+  list() {
+    return all(
+      `SELECT p.*, v.name AS vendor_name FROM purchases p
+       JOIN vendors v ON v.id = p.vendor_id
+       ORDER BY p.purchase_date DESC, p.id DESC`
+    )
+  },
+  nextVoucher() {
+    return seq('purchases', 'PUR')
+  },
+  create(h: any) {
+    return tx(() => {
+      const vendor = one<{ state_code: string }>('SELECT state_code FROM vendors WHERE id = ?', [h.vendor_id])
+      const inter = !!vendor?.state_code && vendor.state_code !== companyStateCode()
+      const mode = h.gst_pricing_mode || 'EXCLUSIVE'
+      const pid = insert(
+        `INSERT INTO purchases (voucher_no, purchase_date, vendor_id, gst_pricing_mode, taxable_total, cgst, sgst, igst, grand_total, notes, created_at)
+         VALUES (?,?,?,?,0,0,0,0,0,?,?)`,
+        [h.voucher_no, h.purchase_date, h.vendor_id, mode, h.notes || '', now()]
+      )
+      let taxable = 0, cgst = 0, sgst = 0, igst = 0, total = 0
+      for (const it of h.items || []) {
+        const qty = Number(it.quantity) || 0
+        const rate = Number(it.rate) || 0
+        const gr = Number(it.gst_rate) || 0
+        if (qty <= 0 || !it.product_id) continue
+        const L = computeLine(qty, rate, gr, mode, inter)
+        insert(
+          `INSERT INTO purchase_items (purchase_id, product_id, quantity, rate, gst_rate, taxable_value, cgst, sgst, igst, line_total)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          [pid, it.product_id, qty, rate, gr, L.taxable, L.cgst, L.sgst, L.igst, L.lineTotal]
+        )
+        addLot(it.product_id, qty, L.unitCost, 'PURCHASE', pid, h.purchase_date)
+        taxable += L.taxable; cgst += L.cgst; sgst += L.sgst; igst += L.igst; total += L.lineTotal
+      }
+      run('UPDATE purchases SET taxable_total=?, cgst=?, sgst=?, igst=?, grand_total=? WHERE id=?', [taxable, cgst, sgst, igst, total, pid])
+      return one('SELECT * FROM purchases WHERE id = ?', [pid])
+    })
+  }
+}
+
+export const productionRepo = {
+  list() {
+    return all(
+      `SELECT pr.*, p.name AS product_name FROM productions pr
+       JOIN products p ON p.id = pr.product_id
+       ORDER BY pr.production_date DESC, pr.id DESC`
+    )
+  },
+  nextVoucher() {
+    return seq('productions', 'PRD')
+  },
+  /** Required inputs + availability for a planned batch (for the UI). */
+  preview(productId: number, outputQty: number) {
+    const prod = one<{ recipe_output_qty: number }>('SELECT recipe_output_qty FROM products WHERE id = ?', [productId])
+    const scale = (Number(outputQty) || 0) / (prod?.recipe_output_qty || 1)
+    const recipe = recipeRepo.get(productId) as any[]
+    return recipe.map((r) => {
+      const required = r.quantity * scale
+      const have = available(r.component_product_id)
+      return {
+        component_product_id: r.component_product_id,
+        component_name: r.component_name,
+        component_unit: r.component_unit,
+        per_batch: r.quantity,
+        required,
+        available: have,
+        short: required > have + 1e-9
+      }
+    })
+  },
+  create(h: any) {
+    return tx(() => {
+      const prod = one<{ recipe_output_qty: number }>('SELECT recipe_output_qty FROM products WHERE id = ?', [h.product_id])
+      const outputQty = Number(h.output_qty) || 0
+      if (outputQty <= 0) throw new Error('OUTPUT QUANTITY MUST BE GREATER THAN 0')
+      const scale = outputQty / (prod?.recipe_output_qty || 1)
+      const inputs: Array<{ component_product_id: number; quantity: number }> =
+        h.inputs && h.inputs.length
+          ? h.inputs.map((i: any) => ({ component_product_id: i.component_product_id, quantity: Number(i.quantity) || 0 }))
+          : (recipeRepo.get(h.product_id) as any[]).map((r) => ({
+              component_product_id: r.component_product_id,
+              quantity: r.quantity * scale
+            }))
+      if (!inputs.length) throw new Error('NO RECIPE DEFINED FOR THIS PRODUCT — ADD A RECIPE FIRST')
+      for (const inp of inputs) {
+        if (inp.quantity <= 0) continue
+        if (available(inp.component_product_id) < inp.quantity - 1e-9) {
+          throw new Error(
+            `INSUFFICIENT STOCK OF ${nameOf(inp.component_product_id)} (NEED ${inp.quantity}, HAVE ${available(inp.component_product_id)})`
+          )
+        }
+      }
+      const prodId = insert(
+        `INSERT INTO productions (voucher_no, production_date, product_id, output_qty, total_input_cost, unit_cost, notes, created_at)
+         VALUES (?,?,?,?,0,0,?,?)`,
+        [h.voucher_no, h.production_date, h.product_id, outputQty, h.notes || '', now()]
+      )
+      let totalCost = 0
+      for (const inp of inputs) {
+        if (inp.quantity <= 0) continue
+        const r = consumeFIFO(inp.component_product_id, inp.quantity, 'PRODUCTION', prodId, h.production_date)
+        totalCost += r.cost
+        insert('INSERT INTO production_inputs (production_id, component_product_id, quantity, cost) VALUES (?,?,?,?)', [
+          prodId, inp.component_product_id, inp.quantity, r.cost
+        ])
+      }
+      const unitCost = outputQty > 0 ? totalCost / outputQty : 0
+      run('UPDATE productions SET total_input_cost=?, unit_cost=? WHERE id=?', [totalCost, unitCost, prodId])
+      addLot(h.product_id, outputQty, unitCost, 'PRODUCTION', prodId, h.production_date)
+      return one('SELECT * FROM productions WHERE id = ?', [prodId])
+    })
+  }
+}
+
+export const saleRepo = {
+  list() {
+    return all(
+      `SELECT s.*, c.name AS customer_name FROM sales s
+       JOIN customers c ON c.id = s.customer_id
+       ORDER BY s.sale_date DESC, s.id DESC`
+    )
+  },
+  nextInvoice() {
+    const prefix = one<{ invoice_prefix: string }>('SELECT invoice_prefix FROM company WHERE id = 1')?.invoice_prefix || 'INV'
+    const c = one<{ c: number }>('SELECT COUNT(*) AS c FROM sales')
+    return `${prefix}-${String((c?.c ?? 0) + 1).padStart(4, '0')}`
+  },
+  create(h: any) {
+    return tx(() => {
+      const cust = one<{ state_code: string }>('SELECT state_code FROM customers WHERE id = ?', [h.customer_id])
+      const inter = !!cust?.state_code && cust.state_code !== companyStateCode()
+      const mode = h.gst_pricing_mode || 'EXCLUSIVE'
+      for (const it of h.items || []) {
+        const qty = Number(it.quantity) || 0
+        if (qty <= 0 || !it.product_id) continue
+        if (available(it.product_id) < qty - 1e-9) {
+          throw new Error(`INSUFFICIENT STOCK TO SELL ${nameOf(it.product_id)} (NEED ${qty}, HAVE ${available(it.product_id)})`)
+        }
+      }
+      const sid = insert(
+        `INSERT INTO sales (invoice_no, sale_date, customer_id, gst_pricing_mode, place_of_supply, taxable_total, cgst, sgst, igst, grand_total, cogs, notes, created_at)
+         VALUES (?,?,?,?,?,0,0,0,0,0,0,?,?)`,
+        [h.invoice_no, h.sale_date, h.customer_id, mode, cust?.state_code || '', h.notes || '', now()]
+      )
+      let taxable = 0, cgst = 0, sgst = 0, igst = 0, total = 0, cogsTotal = 0
+      for (const it of h.items || []) {
+        const qty = Number(it.quantity) || 0
+        const rate = Number(it.rate) || 0
+        const gr = Number(it.gst_rate) || 0
+        if (qty <= 0 || !it.product_id) continue
+        const L = computeLine(qty, rate, gr, mode, inter)
+        const cogs = consumeFIFO(it.product_id, qty, 'SALE', sid, h.sale_date)
+        insert(
+          `INSERT INTO sale_items (sale_id, product_id, quantity, rate, gst_rate, taxable_value, cgst, sgst, igst, line_total, cogs)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          [sid, it.product_id, qty, rate, gr, L.taxable, L.cgst, L.sgst, L.igst, L.lineTotal, cogs.cost]
+        )
+        taxable += L.taxable; cgst += L.cgst; sgst += L.sgst; igst += L.igst; total += L.lineTotal; cogsTotal += cogs.cost
+      }
+      run('UPDATE sales SET taxable_total=?, cgst=?, sgst=?, igst=?, grand_total=?, cogs=? WHERE id=?', [taxable, cgst, sgst, igst, total, cogsTotal, sid])
+      return one('SELECT * FROM sales WHERE id = ?', [sid])
+    })
+  }
+}
+
+export const expenseRepo = {
+  categories() {
+    return all('SELECT * FROM expense_categories ORDER BY name')
+  },
+  createCategory(name: string) {
+    const id = insert('INSERT INTO expense_categories (name, created_at) VALUES (?,?)', [name, now()])
+    save()
+    return one('SELECT * FROM expense_categories WHERE id = ?', [id])
+  },
+  list() {
+    return all(
+      `SELECT e.*, c.name AS category_name FROM expenses e
+       LEFT JOIN expense_categories c ON c.id = e.category_id
+       ORDER BY e.expense_date DESC, e.id DESC`
+    )
+  },
+  nextVoucher() {
+    return seq('expenses', 'EXP')
+  },
+  create(h: any) {
+    const id = insert(
+      `INSERT INTO expenses (voucher_no, expense_date, category_id, description, amount, notes, created_at)
+       VALUES (?,?,?,?,?,?,?)`,
+      [h.voucher_no, h.expense_date, h.category_id || null, h.description || '', Number(h.amount) || 0, h.notes || '', now()]
+    )
+    save()
+    return one('SELECT * FROM expenses WHERE id = ?', [id])
+  },
+  remove(id: number) {
+    run('DELETE FROM expenses WHERE id = ?', [id])
+    save()
+    return { ok: true }
+  }
+}
+
+export const reportRepo = {
+  pnl(from?: string, to?: string) {
+    const f = from || '0000-01-01'
+    const t = to || '9999-12-31'
+    const sales = one<{ rev: number; cogs: number; cnt: number }>(
+      'SELECT COALESCE(SUM(taxable_total),0) AS rev, COALESCE(SUM(cogs),0) AS cogs, COUNT(*) AS cnt FROM sales WHERE sale_date BETWEEN ? AND ?',
+      [f, t]
+    )!
+    const exp = one<{ amt: number }>('SELECT COALESCE(SUM(amount),0) AS amt FROM expenses WHERE expense_date BETWEEN ? AND ?', [f, t])!
+    const purchases = one<{ amt: number; cnt: number }>(
+      'SELECT COALESCE(SUM(taxable_total),0) AS amt, COUNT(*) AS cnt FROM purchases WHERE purchase_date BETWEEN ? AND ?',
+      [f, t]
+    )!
+    const grossProfit = sales.rev - sales.cogs
+    const byCategory = all(
+      `SELECT COALESCE(c.name,'UNCATEGORISED') AS name, SUM(e.amount) AS amount
+       FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id
+       WHERE e.expense_date BETWEEN ? AND ? GROUP BY c.id ORDER BY amount DESC`,
+      [f, t]
+    )
+    return {
+      revenue: sales.rev,
+      cogs: sales.cogs,
+      gross_profit: grossProfit,
+      expenses: exp.amt,
+      net_profit: grossProfit - exp.amt,
+      sales_count: sales.cnt,
+      purchases_total: purchases.amt,
+      purchases_count: purchases.cnt,
+      expense_by_category: byCategory
+    }
+  },
+  monthly() {
+    return all(
+      `SELECT substr(sale_date,1,7) AS ym, SUM(taxable_total) AS revenue, SUM(cogs) AS cogs
+       FROM sales GROUP BY ym ORDER BY ym ASC`
+    )
+  }
+}
+
 export { all, one, run, insert, tx }

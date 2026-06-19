@@ -7,7 +7,12 @@ import {
   vendorRepo,
   customerRepo,
   inventoryRepo,
-  openingStockRepo
+  openingStockRepo,
+  purchaseRepo,
+  productionRepo,
+  saleRepo,
+  expenseRepo,
+  reportRepo
 } from './db'
 import { exportProducts, importProducts, downloadProductTemplate, exportRows } from './excel'
 import type { Result } from '@shared/types'
@@ -66,6 +71,36 @@ export function registerIpc(): void {
 
   // ---- Opening stock ----
   handle('openingStock:save', (_e, rows) => openingStockRepo.save(rows))
+
+  // ---- Purchases ----
+  handle('purchases:list', () => purchaseRepo.list())
+  handle('purchases:nextVoucher', () => purchaseRepo.nextVoucher())
+  handle('purchases:create', (_e, payload) => purchaseRepo.create(payload))
+
+  // ---- Production ----
+  handle('productions:list', () => productionRepo.list())
+  handle('productions:nextVoucher', () => productionRepo.nextVoucher())
+  handle('productions:preview', (_e, productId: number, outputQty: number) =>
+    productionRepo.preview(productId, outputQty)
+  )
+  handle('productions:create', (_e, payload) => productionRepo.create(payload))
+
+  // ---- Sales ----
+  handle('sales:list', () => saleRepo.list())
+  handle('sales:nextInvoice', () => saleRepo.nextInvoice())
+  handle('sales:create', (_e, payload) => saleRepo.create(payload))
+
+  // ---- Expenses ----
+  handle('expenses:list', () => expenseRepo.list())
+  handle('expenses:categories', () => expenseRepo.categories())
+  handle('expenses:createCategory', (_e, name: string) => expenseRepo.createCategory(name))
+  handle('expenses:nextVoucher', () => expenseRepo.nextVoucher())
+  handle('expenses:create', (_e, payload) => expenseRepo.create(payload))
+  handle('expenses:remove', (_e, id: number) => expenseRepo.remove(id))
+
+  // ---- Reports ----
+  handle('reports:pnl', (_e, from?: string, to?: string) => reportRepo.pnl(from, to))
+  handle('reports:monthly', () => reportRepo.monthly())
 
   // ---- Excel ----
   handle('excel:exportProducts', (e) => exportProducts(winOf(e)))

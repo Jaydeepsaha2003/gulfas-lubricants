@@ -82,10 +82,14 @@ npm run build:win  # build + package a Windows installer (electron-builder)
 ## Build roadmap / status
 
 - [x] **M1 Foundation** — app shell, nav, theme, DB + full schema, IPC, UpperInput/`*`, Excel engine, **Settings**, Inventory view, Dashboard
-- [ ] **M2 Product Master** — raw + finished products, BOM editor, opening stock, Excel import/export; Vendors & Customers masters
-- [ ] **M3 Purchase** — multi-vendor purchase entry → FIFO lots, GST
-- [ ] **M4 Production** — batch run against recipe, FIFO consume → finished lots
-- [ ] **M5 Sales** — GST invoices, FIFO COGS
-- [ ] **M6 Profit/Loss + Expenses + Dashboard charts + GST reports**
-- [ ] **M7 Windows installer**
+- [x] **M2 Product Master** — raw + finished products, BOM editor, opening stock, Excel import/export; Vendors & Customers masters
+- [x] **M3 Purchase** — multi-vendor purchase entry → FIFO lots, GST (CGST/SGST/IGST)
+- [x] **M4 Production** — batch run against recipe, FIFO consume → finished lots at true cost
+- [x] **M5 Sales** — GST invoices, FIFO COGS, per-invoice profit
+- [x] **M6 Profit/Loss + Business Expenses + Dashboard P&L cards + monthly chart**
+- [x] **M7 Windows installer** — electron-builder NSIS + GitHub Actions release on tag
+- [ ] _Future:_ PDF invoice printing, GSTR-style tax reports, transaction edit/delete with stock reversal, custom app icon, data backup/restore UI
+
+All transaction logic (FIFO, GST split, production costing, P&L) is covered by an integration
+test scenario — see git history (`_dbtest.cjs` harness) for the verified numbers.
 ```

@@ -27,11 +27,18 @@ interface Stat {
 export default function Dashboard(): JSX.Element {
   const { company, currency } = useCompany()
   const [inv, setInv] = useState<InventoryRow[]>([])
+  const [pnl, setPnl] = useState<any>(null)
 
   useEffect(() => {
     window.api.inventory
       .list()
       .then((rows) => setInv(rows as InventoryRow[]))
+      .catch(() => {})
+    const yearStart = `${new Date().getFullYear()}-01-01`
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+    window.api.reports
+      .pnl(yearStart, today)
+      .then(setPnl)
       .catch(() => {})
   }, [])
 
@@ -83,6 +90,30 @@ export default function Dashboard(): JSX.Element {
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      {/* This-year financials */}
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Card>
+          <CardContent className="p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">REVENUE (THIS YEAR)</div>
+            <div className="mt-1 text-2xl font-bold tabular-nums">{formatMoney(pnl?.revenue ?? 0, currency)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">EXPENSES (THIS YEAR)</div>
+            <div className="mt-1 text-2xl font-bold tabular-nums">{formatMoney(pnl?.expenses ?? 0, currency)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">NET PROFIT (THIS YEAR)</div>
+            <div className={`mt-1 text-2xl font-bold tabular-nums ${(pnl?.net_profit ?? 0) >= 0 ? 'text-success' : 'text-destructive'}`}>
+              {formatMoney(pnl?.net_profit ?? 0, currency)}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
