@@ -28,6 +28,8 @@ interface TransactionDialogProps {
   parties: Party[]
   products: Product[]
   onSaved: () => void
+  editId?: number
+  editData?: any
 }
 
 const blankLine = (): LineInput => ({ product_id: '', quantity: '1', rate: '0', gst_rate: '0', uom: 'EACH' })
@@ -38,7 +40,9 @@ export function TransactionDialog({
   mode,
   parties,
   products,
-  onSaved
+  onSaved,
+  editId,
+  editData
 }: TransactionDialogProps): JSX.Element {
   const { company, currency } = useCompany()
   const [docNo, setDocNo] = useState('')
@@ -50,21 +54,42 @@ export function TransactionDialog({
   const [saving, setSaving] = useState(false)
 
   const isPurchase = mode === 'PURCHASE'
+  const isEdit = !!editId && !!editData
 
   useEffect(() => {
     if (!open) return
-    setDate(todayISO())
-    setPartyId('')
-    setNotes('')
-    setLines([blankLine()])
     setGstMode(company?.gst_pricing_mode || 'EXCLUSIVE')
-    if ((company?.doc_numbering ?? 'AUTOMATIC') === 'AUTOMATIC') {
-      const next = isPurchase ? window.api.purchases.nextVoucher() : window.api.sales.nextInvoice()
-      next.then(setDocNo).catch(() => setDocNo(''))
+
+    if (isEdit && editData) {
+      // Pre-fill from existing transaction
+      setDocNo(isPurchase ? editData.voucher_no : editData.invoice_no)
+      setDate(isPurchase ? editData.purchase_date : editData.sale_date)
+      setPartyId(String(isPurchase ? editData.vendor_id : editData.customer_id))
+      setGstMode(editData.gst_pricing_mode || 'EXCLUSIVE')
+      setNotes(editData.notes || '')
+      setLines(
+        (editData.items || []).map((it: any) => ({
+          product_id: String(it.product_id),
+          quantity: String(it.quantity),
+          rate: String(it.rate),
+          gst_rate: String(it.gst_rate),
+          uom: it.uom || 'EACH'
+        }))
+      )
     } else {
-      setDocNo('')
+      setDate(todayISO())
+      setPartyId('')
+      setNotes('')
+      setLines([blankLine()])
+      const autoNumber = (company?.doc_numbering ?? 'AUTOMATIC') === 'AUTOMATIC'
+      if (autoNumber) {
+        const next = isPurchase ? window.api.purchases.nextVoucher() : window.api.sales.nextInvoice()
+        next.then(setDocNo).catch(() => setDocNo(''))
+      } else {
+        setDocNo('')
+      }
     }
-  }, [open, company, isPurchase])
+  }, [open, editData])
 
   const autoNumber = (company?.doc_numbering ?? 'AUTOMATIC') === 'AUTOMATIC'
   const party = parties.find((p) => String(p.id) === partyId)
@@ -101,7 +126,11 @@ export function TransactionDialog({
       toast.error(`PLEASE SELECT A ${isPurchase ? 'VENDOR' : 'CUSTOMER'}`)
       return
     }
-    if (!autoNumber && !docNo.trim()) {
+    if (!isEdit && !autoNumber && !docNo.trim()) {
+      toast.error(`PLEASE ENTER A ${isPurchase ? 'VOUCHER' : 'INVOICE'} NUMBER`)
+      return
+    }
+    if (isEdit && !docNo.trim()) {
       toast.error(`PLEASE ENTER A ${isPurchase ? 'VOUCHER' : 'INVOICE'} NUMBER`)
       return
     }
@@ -121,25 +150,39 @@ export function TransactionDialog({
     setSaving(true)
     try {
       if (isPurchase) {
-        await window.api.purchases.create({
+        const payload = {
           voucher_no: docNo,
           purchase_date: date,
           vendor_id: Number(partyId),
           gst_pricing_mode: gstMode,
           notes,
           items
-        })
+        }
+        if (isEdit) {
+          await window.api.purchases.update(editId!, payload)
+        } else {
+          await window.api.purchases.create(payload)
+        }
       } else {
-        await window.api.sales.create({
+        const payload = {
           invoice_no: docNo,
           sale_date: date,
           customer_id: Number(partyId),
           gst_pricing_mode: gstMode,
           notes,
           items
-        })
+        }
+        if (isEdit) {
+          await window.api.sales.update(editId!, payload)
+        } else {
+          await window.api.sales.create(payload)
+        }
       }
-      toast.success(isPurchase ? 'PURCHASE SAVED — STOCK UPDATED' : 'SALE SAVED — INVOICE RECORDED')
+      toast.success(
+        isPurchase
+          ? isEdit ? 'PURCHASE UPDATED — STOCK ADJUSTED' : 'PURCHASE SAVED — STOCK UPDATED'
+          : isEdit ? 'SALE UPDATED — STOCK ADJUSTED' : 'SALE SAVED — INVOICE RECORDED'
+      )
       onSaved()
       onOpenChange(false)
     } catch (e: any) {
@@ -153,7 +196,11 @@ export function TransactionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isPurchase ? 'NEW PURCHASE' : 'NEW SALE INVOICE'}</DialogTitle>
+          <DialogTitle>
+            {isEdit
+              ? isPurchase ? 'EDIT PURCHASE' : 'EDIT SALE INVOICE'
+              : isPurchase ? 'NEW PURCHASE' : 'NEW SALE INVOICE'}
+          </DialogTitle>
           <DialogDescription>
             {isPurchase
               ? 'RECORD A PURCHASE — EACH LINE ADDS A DATED FIFO STOCK LOT.'
@@ -162,13 +209,13 @@ export function TransactionDialog({
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Field label={isPurchase ? 'VOUCHER NO' : 'INVOICE NO'} required hint={autoNumber ? 'AUTO-GENERATED' : 'ENTER MANUALLY'}>
+          <Field label={isPurchase ? 'VOUCHER NO' : 'INVOICE NO'} required hint={(!isEdit && autoNumber) ? 'AUTO-GENERATED' : undefined}>
             <Input
               value={docNo}
               onChange={(e) => setDocNo(e.target.value.toUpperCase())}
-              className={`uppercase ${autoNumber ? 'font-mono' : ''}`}
-              disabled={autoNumber}
-              placeholder={autoNumber ? '' : 'ENTER NUMBER'}
+              className={`uppercase ${(!isEdit && autoNumber) ? 'font-mono' : ''}`}
+              disabled={!isEdit && autoNumber}
+              placeholder={(!isEdit && autoNumber) ? '' : 'ENTER NUMBER'}
             />
           </Field>
           <Field label="DATE" required>
@@ -312,7 +359,7 @@ export function TransactionDialog({
             CANCEL
           </Button>
           <Button onClick={save} disabled={saving}>
-            <Check /> {saving ? 'SAVING…' : isPurchase ? 'SAVE PURCHASE' : 'SAVE INVOICE'}
+            <Check /> {saving ? 'SAVING…' : isEdit ? (isPurchase ? 'UPDATE PURCHASE' : 'UPDATE INVOICE') : isPurchase ? 'SAVE PURCHASE' : 'SAVE INVOICE'}
           </Button>
         </DialogFooter>
       </DialogContent>

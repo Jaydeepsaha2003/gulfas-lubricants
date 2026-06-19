@@ -28,14 +28,5 @@ asarUnpack:
 
 win:
   target:
-    - nsis
-  artifactName: Gulfas-Lubricants-${version}-Setup.${ext}
-
-nsis:
-  oneClick: false
-  perMachine: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-  shortcutName: Gulfas Lubricants
-  uninstallDisplayName: Gulfas Lubricants
+    - portable
+  artifactName: Gulfas-Lubricants-${version}.${ext}

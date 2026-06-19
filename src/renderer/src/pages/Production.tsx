@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Factory, Plus, Check } from 'lucide-react'
+import { Factory, Plus, Check, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Field } from '@/components/common/Field'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,6 +47,9 @@ export default function Production(): JSX.Element {
   const [finished, setFinished] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
+  const [isEdit, setIsEdit] = useState(false)
+  const [editId, setEditId] = useState<number | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
 
   // dialog state
   const [docNo, setDocNo] = useState('')
@@ -68,8 +72,9 @@ export default function Production(): JSX.Element {
   }
   useEffect(load, [])
 
-  useEffect(() => {
-    if (!open) return
+  const resetDialog = (): void => {
+    setIsEdit(false)
+    setEditId(null)
     setDate(todayISO())
     setProductId('')
     setOutputQty('1')
@@ -77,11 +82,17 @@ export default function Production(): JSX.Element {
     setInputs([])
     if (autoNumber) window.api.productions.nextVoucher().then(setDocNo).catch(() => setDocNo(''))
     else setDocNo('')
-  }, [open, company])
+  }
 
   useEffect(() => {
+    if (!open) return
+    if (!isEdit) resetDialog()
+  }, [open, company])
+
+  // Reload materials when product or qty changes (new mode only)
+  useEffect(() => {
     if (!open || !productId) {
-      setInputs([])
+      if (!isEdit) setInputs([])
       return
     }
     window.api.productions
@@ -98,11 +109,45 @@ export default function Production(): JSX.Element {
         )
       )
       .catch(() => setInputs([]))
-  }, [open, productId, outputQty])
+  }, [open, productId, outputQty, isEdit])
+
+  const openNew = (): void => {
+    setIsEdit(false)
+    setEditId(null)
+    setOpen(true)
+  }
+
+  const openEdit = async (r: any): Promise<void> => {
+    try {
+      const data = await window.api.productions.get(r.id)
+      setIsEdit(true)
+      setEditId(r.id)
+      setDocNo(data.voucher_no)
+      setDate(data.production_date)
+      setProductId(String(data.product_id))
+      setOutputQty(String(data.output_qty))
+      setNotes(data.notes || '')
+      // Pre-fill inputs from saved production_inputs
+      const preview = await window.api.productions.preview(data.product_id, data.output_qty)
+      const inputMap = new Map((data.inputs || []).map((i: any) => [i.component_product_id, i.quantity]))
+      setInputs(
+        (preview as PreviewRow[]).map((r) => ({
+          component_product_id: r.component_product_id,
+          component_name: r.component_name,
+          component_unit: r.component_unit,
+          quantity: String(inputMap.get(r.component_product_id) ?? r.required),
+          available: r.available
+        }))
+      )
+      setOpen(true)
+    } catch (e: any) {
+      toast.error(String(e.message))
+    }
+  }
 
   const anyShort = inputs.some((r) => Number(r.quantity) > r.available + 1e-9)
 
-  const save = async (): Promise<void> => {
+  const doSave = async (): Promise<void> => {
     if (!productId) {
       toast.error('SELECT A FINISHED PRODUCT TO PRODUCE')
       return
@@ -111,27 +156,46 @@ export default function Production(): JSX.Element {
       toast.error('OUTPUT QUANTITY MUST BE GREATER THAN 0')
       return
     }
-    if (!autoNumber && !docNo.trim()) {
+    if (!docNo.trim()) {
       toast.error('PLEASE ENTER A VOUCHER NUMBER')
       return
     }
     setSaving(true)
     try {
-      await window.api.productions.create({
+      const payload = {
         voucher_no: docNo,
         production_date: date,
         product_id: Number(productId),
         output_qty: Number(outputQty),
         inputs: inputs.map((r) => ({ component_product_id: r.component_product_id, quantity: Number(r.quantity) })),
         notes
-      })
-      toast.success('PRODUCTION COMPLETE — FINISHED GOODS ADDED TO STOCK')
+      }
+      if (isEdit && editId) {
+        await window.api.productions.update(editId, payload)
+        toast.success('PRODUCTION UPDATED — STOCK ADJUSTED')
+      } else {
+        await window.api.productions.create(payload)
+        toast.success('PRODUCTION COMPLETE — FINISHED GOODS ADDED TO STOCK')
+      }
       setOpen(false)
       load()
     } catch (e: any) {
       toast.error(String(e.message))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const doDelete = async (): Promise<void> => {
+    if (!deleteTarget) return
+    try {
+      await window.api.productions.remove(deleteTarget.id)
+      toast.success('PRODUCTION DELETED — RAW MATERIALS RESTORED')
+      load()
+    } catch (e: any) {
+      toast.error(String(e.message))
+    } finally {
+      setDeleteTarget(null)
     }
   }
 
@@ -142,7 +206,7 @@ export default function Production(): JSX.Element {
         icon={Factory}
         subtitle="PRODUCE FINISHED GOODS FROM RECIPES — RAW MATERIALS CONSUMED FIFO"
         actions={
-          <Button onClick={() => setOpen(true)} disabled={finished.length === 0}>
+          <Button onClick={openNew} disabled={finished.length === 0}>
             <Plus /> NEW PRODUCTION
           </Button>
         }
@@ -167,17 +231,18 @@ export default function Production(): JSX.Element {
                 <TableHead className="text-right">OUTPUT QTY</TableHead>
                 <TableHead className="text-right">TOTAL COST</TableHead>
                 <TableHead className="text-right">UNIT COST</TableHead>
+                <TableHead className="w-24 text-right">ACTIONS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">LOADING…</TableCell>
+                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">LOADING…</TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
-                    NO PRODUCTION RUNS YET. CLICK “NEW PRODUCTION”.
+                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                    NO PRODUCTION RUNS YET. CLICK "NEW PRODUCTION".
                   </TableCell>
                 </TableRow>
               ) : (
@@ -189,6 +254,16 @@ export default function Production(): JSX.Element {
                     <TableCell className="text-right tabular-nums">{formatQty(r.output_qty)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatMoney(r.total_input_cost, currency)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatMoney(r.unit_cost, currency)}</TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(r)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteTarget(r)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -197,30 +272,30 @@ export default function Production(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setIsEdit(false); setEditId(null) } }}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>NEW PRODUCTION BATCH</DialogTitle>
+            <DialogTitle>{isEdit ? 'EDIT PRODUCTION BATCH' : 'NEW PRODUCTION BATCH'}</DialogTitle>
             <DialogDescription>
               PICK A FINISHED PRODUCT AND HOW MANY TO MAKE. THE RECIPE IS SCALED AND CHECKED AGAINST STOCK.
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="VOUCHER NO" required hint={autoNumber ? 'AUTO-GENERATED' : 'ENTER MANUALLY'}>
+            <Field label="VOUCHER NO" required hint={!isEdit && autoNumber ? 'AUTO-GENERATED' : undefined}>
               <Input
                 value={docNo}
                 onChange={(e) => setDocNo(e.target.value.toUpperCase())}
-                className={`uppercase ${autoNumber ? 'font-mono' : ''}`}
-                disabled={autoNumber}
-                placeholder={autoNumber ? '' : 'ENTER NUMBER'}
+                className={`uppercase ${!isEdit && autoNumber ? 'font-mono' : ''}`}
+                disabled={!isEdit && autoNumber}
+                placeholder={(!isEdit && autoNumber) ? '' : 'ENTER NUMBER'}
               />
             </Field>
             <Field label="DATE" required>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </Field>
             <Field label="FINISHED PRODUCT" required className="col-span-2">
-              <Select value={productId} onValueChange={setProductId}>
+              <Select value={productId} onValueChange={(v) => { setProductId(v); if (!isEdit) setOutputQty('1') }}>
                 <SelectTrigger>
                   <SelectValue placeholder="SELECT FINISHED PRODUCT" />
                 </SelectTrigger>
@@ -296,12 +371,22 @@ export default function Production(): JSX.Element {
             <Button variant="outline" onClick={() => setOpen(false)}>
               CANCEL
             </Button>
-            <Button onClick={save} disabled={saving || !productId || inputs.length === 0 || anyShort}>
-              <Check /> {saving ? 'PRODUCING…' : anyShort ? 'NOT ENOUGH STOCK' : 'RUN PRODUCTION'}
+            <Button onClick={doSave} disabled={saving || !productId || inputs.length === 0 || anyShort}>
+              <Check /> {saving ? (isEdit ? 'UPDATING…' : 'PRODUCING…') : anyShort ? 'NOT ENOUGH STOCK' : isEdit ? 'UPDATE PRODUCTION' : 'RUN PRODUCTION'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="DELETE THIS PRODUCTION?"
+        description={`VOUCHER ${deleteTarget?.voucher_no ?? ''} WILL BE REMOVED AND RAW MATERIALS RESTORED. ONLY WORKS IF THE PRODUCED GOODS HAVE NOT BEEN SOLD.`}
+        confirmLabel="DELETE"
+        destructive
+        onConfirm={doDelete}
+      />
     </>
   )
 }

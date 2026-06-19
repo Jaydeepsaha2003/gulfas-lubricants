@@ -77,21 +77,30 @@ export function registerIpc(): void {
 
   // ---- Purchases ----
   handle('purchases:list', () => purchaseRepo.list())
+  handle('purchases:get', (_e, id: number) => purchaseRepo.get(id))
   handle('purchases:nextVoucher', () => purchaseRepo.nextVoucher())
   handle('purchases:create', (_e, payload) => purchaseRepo.create(payload))
+  handle('purchases:update', (_e, id: number, payload) => purchaseRepo.update(id, payload))
+  handle('purchases:remove', (_e, id: number) => purchaseRepo.remove(id))
 
   // ---- Production ----
   handle('productions:list', () => productionRepo.list())
+  handle('productions:get', (_e, id: number) => productionRepo.get(id))
   handle('productions:nextVoucher', () => productionRepo.nextVoucher())
   handle('productions:preview', (_e, productId: number, outputQty: number) =>
     productionRepo.preview(productId, outputQty)
   )
   handle('productions:create', (_e, payload) => productionRepo.create(payload))
+  handle('productions:update', (_e, id: number, payload) => productionRepo.update(id, payload))
+  handle('productions:remove', (_e, id: number) => productionRepo.remove(id))
 
   // ---- Sales ----
   handle('sales:list', () => saleRepo.list())
+  handle('sales:get', (_e, id: number) => saleRepo.get(id))
   handle('sales:nextInvoice', () => saleRepo.nextInvoice())
   handle('sales:create', (_e, payload) => saleRepo.create(payload))
+  handle('sales:update', (_e, id: number, payload) => saleRepo.update(id, payload))
+  handle('sales:remove', (_e, id: number) => saleRepo.remove(id))
 
   // ---- Expenses ----
   handle('expenses:list', () => expenseRepo.list())
@@ -99,6 +108,7 @@ export function registerIpc(): void {
   handle('expenses:createCategory', (_e, name: string) => expenseRepo.createCategory(name))
   handle('expenses:nextVoucher', () => expenseRepo.nextVoucher())
   handle('expenses:create', (_e, payload) => expenseRepo.create(payload))
+  handle('expenses:update', (_e, id: number, payload) => expenseRepo.update(id, payload))
   handle('expenses:remove', (_e, id: number) => expenseRepo.remove(id))
 
   // ---- Reports ----

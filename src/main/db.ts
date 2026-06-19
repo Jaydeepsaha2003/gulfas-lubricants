@@ -683,6 +683,12 @@ export const purchaseRepo = {
        ORDER BY p.purchase_date DESC, p.id DESC`
     )
   },
+  get(id: number) {
+    const header = one('SELECT * FROM purchases WHERE id = ?', [id])
+    if (!header) return null
+    const items = all('SELECT * FROM purchase_items WHERE purchase_id = ? ORDER BY id', [id])
+    return { ...(header as any), items }
+  },
   nextVoucher() {
     return seq('purchases', 'PUR')
   },
@@ -714,6 +720,64 @@ export const purchaseRepo = {
       run('UPDATE purchases SET taxable_total=?, cgst=?, sgst=?, igst=?, grand_total=? WHERE id=?', [taxable, cgst, sgst, igst, total, pid])
       return one('SELECT * FROM purchases WHERE id = ?', [pid])
     })
+  },
+  remove(id: number) {
+    return tx(() => {
+      const lots = all<{ id: number; qty_in: number; qty_remaining: number }>(
+        'SELECT id, qty_in, qty_remaining FROM stock_lots WHERE source_type = ? AND source_id = ?',
+        ['PURCHASE', id]
+      )
+      for (const l of lots) {
+        if (Math.abs(l.qty_in - l.qty_remaining) > 1e-9) {
+          throw new Error('CANNOT DELETE: STOCK FROM THIS PURCHASE HAS BEEN USED IN PRODUCTION OR SALES')
+        }
+      }
+      for (const l of lots) run('DELETE FROM stock_moves WHERE lot_id = ?', [l.id])
+      run('DELETE FROM stock_lots WHERE source_type = ? AND source_id = ?', ['PURCHASE', id])
+      run('DELETE FROM purchase_items WHERE purchase_id = ?', [id])
+      run('DELETE FROM purchases WHERE id = ?', [id])
+      return { ok: true }
+    })
+  },
+  update(id: number, h: any) {
+    return tx(() => {
+      const lots = all<{ id: number; qty_in: number; qty_remaining: number }>(
+        'SELECT id, qty_in, qty_remaining FROM stock_lots WHERE source_type = ? AND source_id = ?',
+        ['PURCHASE', id]
+      )
+      for (const l of lots) {
+        if (Math.abs(l.qty_in - l.qty_remaining) > 1e-9) {
+          throw new Error('CANNOT EDIT: STOCK FROM THIS PURCHASE HAS BEEN USED IN PRODUCTION OR SALES')
+        }
+      }
+      for (const l of lots) run('DELETE FROM stock_moves WHERE lot_id = ?', [l.id])
+      run('DELETE FROM stock_lots WHERE source_type = ? AND source_id = ?', ['PURCHASE', id])
+      run('DELETE FROM purchase_items WHERE purchase_id = ?', [id])
+      const vendor = one<{ state_code: string }>('SELECT state_code FROM vendors WHERE id = ?', [h.vendor_id])
+      const inter = !!vendor?.state_code && vendor.state_code !== companyStateCode()
+      const mode = h.gst_pricing_mode || 'EXCLUSIVE'
+      run(
+        'UPDATE purchases SET voucher_no=?, purchase_date=?, vendor_id=?, gst_pricing_mode=?, notes=?, taxable_total=0, cgst=0, sgst=0, igst=0, grand_total=0 WHERE id=?',
+        [h.voucher_no, h.purchase_date, h.vendor_id, mode, h.notes || '', id]
+      )
+      let taxable = 0, cgst = 0, sgst = 0, igst = 0, total = 0
+      for (const it of h.items || []) {
+        const qty = Number(it.quantity) || 0
+        const rate = Number(it.rate) || 0
+        const gr = Number(it.gst_rate) || 0
+        if (qty <= 0 || !it.product_id) continue
+        const L = computeLine(qty, rate, gr, mode, inter)
+        insert(
+          `INSERT INTO purchase_items (purchase_id, product_id, quantity, rate, gst_rate, taxable_value, cgst, sgst, igst, line_total)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          [id, it.product_id, qty, rate, gr, L.taxable, L.cgst, L.sgst, L.igst, L.lineTotal]
+        )
+        addLot(it.product_id, qty, L.unitCost, 'PURCHASE', id, h.purchase_date)
+        taxable += L.taxable; cgst += L.cgst; sgst += L.sgst; igst += L.igst; total += L.lineTotal
+      }
+      run('UPDATE purchases SET taxable_total=?, cgst=?, sgst=?, igst=?, grand_total=? WHERE id=?', [taxable, cgst, sgst, igst, total, id])
+      return one('SELECT * FROM purchases WHERE id = ?', [id])
+    })
   }
 }
 
@@ -724,6 +788,12 @@ export const productionRepo = {
        JOIN products p ON p.id = pr.product_id
        ORDER BY pr.production_date DESC, pr.id DESC`
     )
+  },
+  get(id: number) {
+    const header = one('SELECT * FROM productions WHERE id = ?', [id])
+    if (!header) return null
+    const inputs = all('SELECT * FROM production_inputs WHERE production_id = ? ORDER BY id', [id])
+    return { ...(header as any), inputs }
   },
   nextVoucher() {
     return seq('productions', 'PRD')
@@ -788,6 +858,96 @@ export const productionRepo = {
       addLot(h.product_id, outputQty, unitCost, 'PRODUCTION', prodId, h.production_date)
       return one('SELECT * FROM productions WHERE id = ?', [prodId])
     })
+  },
+  remove(id: number) {
+    return tx(() => {
+      const lot = one<{ id: number; qty_in: number; qty_remaining: number }>(
+        'SELECT id, qty_in, qty_remaining FROM stock_lots WHERE source_type = ? AND source_id = ?',
+        ['PRODUCTION', id]
+      )
+      if (lot && Math.abs(lot.qty_in - lot.qty_remaining) > 1e-9) {
+        throw new Error('CANNOT DELETE: PRODUCED GOODS HAVE ALREADY BEEN SOLD OR USED')
+      }
+      const prod = one<{ production_date: string }>('SELECT production_date FROM productions WHERE id = ?', [id])
+      const date = prod?.production_date || ''
+      const inputs = all<{ component_product_id: number; quantity: number; cost: number }>(
+        'SELECT component_product_id, quantity, cost FROM production_inputs WHERE production_id = ?',
+        [id]
+      )
+      for (const inp of inputs) {
+        const unitCost = inp.quantity > 0 ? inp.cost / inp.quantity : 0
+        addLot(inp.component_product_id, inp.quantity, unitCost, 'PROD_REVERSAL', id, date)
+      }
+      if (lot) {
+        run('DELETE FROM stock_moves WHERE lot_id = ?', [lot.id])
+        run('DELETE FROM stock_lots WHERE id = ?', [lot.id])
+      }
+      run('DELETE FROM production_inputs WHERE production_id = ?', [id])
+      run('DELETE FROM productions WHERE id = ?', [id])
+      return { ok: true }
+    })
+  },
+  update(id: number, h: any) {
+    return tx(() => {
+      const lot = one<{ id: number; qty_in: number; qty_remaining: number }>(
+        'SELECT id, qty_in, qty_remaining FROM stock_lots WHERE source_type = ? AND source_id = ?',
+        ['PRODUCTION', id]
+      )
+      if (lot && Math.abs(lot.qty_in - lot.qty_remaining) > 1e-9) {
+        throw new Error('CANNOT EDIT: PRODUCED GOODS HAVE ALREADY BEEN SOLD OR USED')
+      }
+      const prod = one<{ production_date: string }>('SELECT production_date FROM productions WHERE id = ?', [id])
+      const date = prod?.production_date || ''
+      const oldInputs = all<{ component_product_id: number; quantity: number; cost: number }>(
+        'SELECT component_product_id, quantity, cost FROM production_inputs WHERE production_id = ?',
+        [id]
+      )
+      for (const inp of oldInputs) {
+        const unitCost = inp.quantity > 0 ? inp.cost / inp.quantity : 0
+        addLot(inp.component_product_id, inp.quantity, unitCost, 'PROD_REVERSAL', id, date)
+      }
+      if (lot) {
+        run('DELETE FROM stock_moves WHERE lot_id = ?', [lot.id])
+        run('DELETE FROM stock_lots WHERE id = ?', [lot.id])
+      }
+      run('DELETE FROM production_inputs WHERE production_id = ?', [id])
+      const outputQty = Number(h.output_qty) || 0
+      if (outputQty <= 0) throw new Error('OUTPUT QUANTITY MUST BE GREATER THAN 0')
+      const newProd = one<{ recipe_output_qty: number }>('SELECT recipe_output_qty FROM products WHERE id = ?', [h.product_id])
+      const scale = outputQty / (newProd?.recipe_output_qty || 1)
+      const newInputs: Array<{ component_product_id: number; quantity: number }> =
+        h.inputs && h.inputs.length
+          ? h.inputs.map((i: any) => ({ component_product_id: i.component_product_id, quantity: Number(i.quantity) || 0 }))
+          : (recipeRepo.get(h.product_id) as any[]).map((r) => ({
+              component_product_id: r.component_product_id,
+              quantity: r.quantity * scale
+            }))
+      if (!newInputs.length) throw new Error('NO RECIPE DEFINED FOR THIS PRODUCT — ADD A RECIPE FIRST')
+      for (const inp of newInputs) {
+        if (inp.quantity <= 0) continue
+        const have = available(inp.component_product_id)
+        if (have < inp.quantity - 1e-9) {
+          throw new Error(`INSUFFICIENT STOCK OF ${nameOf(inp.component_product_id)} (NEED ${inp.quantity}, HAVE ${have})`)
+        }
+      }
+      run(
+        'UPDATE productions SET voucher_no=?, production_date=?, product_id=?, output_qty=?, notes=?, total_input_cost=0, unit_cost=0 WHERE id=?',
+        [h.voucher_no, h.production_date, h.product_id, outputQty, h.notes || '', id]
+      )
+      let totalCost = 0
+      for (const inp of newInputs) {
+        if (inp.quantity <= 0) continue
+        const r = consumeFIFO(inp.component_product_id, inp.quantity, 'PRODUCTION', id, h.production_date)
+        totalCost += r.cost
+        insert('INSERT INTO production_inputs (production_id, component_product_id, quantity, cost) VALUES (?,?,?,?)', [
+          id, inp.component_product_id, inp.quantity, r.cost
+        ])
+      }
+      const unitCost = outputQty > 0 ? totalCost / outputQty : 0
+      run('UPDATE productions SET total_input_cost=?, unit_cost=? WHERE id=?', [totalCost, unitCost, id])
+      addLot(h.product_id, outputQty, unitCost, 'PRODUCTION', id, h.production_date)
+      return one('SELECT * FROM productions WHERE id = ?', [id])
+    })
   }
 }
 
@@ -798,6 +958,12 @@ export const saleRepo = {
        JOIN customers c ON c.id = s.customer_id
        ORDER BY s.sale_date DESC, s.id DESC`
     )
+  },
+  get(id: number) {
+    const header = one('SELECT * FROM sales WHERE id = ?', [id])
+    if (!header) return null
+    const items = all('SELECT * FROM sale_items WHERE sale_id = ? ORDER BY id', [id])
+    return { ...(header as any), items }
   },
   nextInvoice() {
     const prefix = one<{ invoice_prefix: string }>('SELECT invoice_prefix FROM company WHERE id = 1')?.invoice_prefix || 'INV'
@@ -848,6 +1014,82 @@ export const saleRepo = {
       run('UPDATE sales SET taxable_total=?, cgst=?, sgst=?, igst=?, grand_total=?, cogs=? WHERE id=?', [taxable, cgst, sgst, igst, total, cogsTotal, sid])
       return one('SELECT * FROM sales WHERE id = ?', [sid])
     })
+  },
+  remove(id: number) {
+    return tx(() => {
+      const items = all<{ product_id: number; base_quantity: number; quantity: number; cogs: number }>(
+        'SELECT product_id, base_quantity, quantity, cogs FROM sale_items WHERE sale_id = ?',
+        [id]
+      )
+      const sale = one<{ sale_date: string }>('SELECT sale_date FROM sales WHERE id = ?', [id])
+      const date = sale?.sale_date || ''
+      for (const it of items) {
+        const baseQty = it.base_quantity || it.quantity
+        const unitCost = baseQty > 0 ? it.cogs / baseQty : 0
+        addLot(it.product_id, baseQty, unitCost, 'SALE_REVERSAL', id, date)
+      }
+      run('DELETE FROM sale_items WHERE sale_id = ?', [id])
+      run('DELETE FROM sales WHERE id = ?', [id])
+      return { ok: true }
+    })
+  },
+  update(id: number, h: any) {
+    return tx(() => {
+      // Restore stock from old sale
+      const oldItems = all<{ product_id: number; base_quantity: number; quantity: number; cogs: number }>(
+        'SELECT product_id, base_quantity, quantity, cogs FROM sale_items WHERE sale_id = ?',
+        [id]
+      )
+      const oldSale = one<{ sale_date: string }>('SELECT sale_date FROM sales WHERE id = ?', [id])
+      const oldDate = oldSale?.sale_date || ''
+      for (const it of oldItems) {
+        const baseQty = it.base_quantity || it.quantity
+        const unitCost = baseQty > 0 ? it.cogs / baseQty : 0
+        addLot(it.product_id, baseQty, unitCost, 'SALE_REVERSAL', id, oldDate)
+      }
+      run('DELETE FROM sale_items WHERE sale_id = ?', [id])
+      // Validate new items have enough stock
+      const cust = one<{ state_code: string }>('SELECT state_code FROM customers WHERE id = ?', [h.customer_id])
+      const inter = !!cust?.state_code && cust.state_code !== companyStateCode()
+      const mode = h.gst_pricing_mode || 'EXCLUSIVE'
+      const baseUnits = (it: any): number => {
+        const ups = one<{ units_per_box: number }>('SELECT units_per_box FROM products WHERE id = ?', [it.product_id])?.units_per_box || 1
+        return (Number(it.quantity) || 0) * (it.uom === 'BOX' ? ups : 1)
+      }
+      for (const it of h.items || []) {
+        const qty = Number(it.quantity) || 0
+        if (qty <= 0 || !it.product_id) continue
+        const need = baseUnits(it)
+        if (available(it.product_id) < need - 1e-9) {
+          throw new Error(`INSUFFICIENT STOCK TO SELL ${nameOf(it.product_id)} (NEED ${need}, HAVE ${available(it.product_id)})`)
+        }
+      }
+      run(
+        'UPDATE sales SET invoice_no=?, sale_date=?, customer_id=?, gst_pricing_mode=?, place_of_supply=?, notes=?, taxable_total=0, cgst=0, sgst=0, igst=0, grand_total=0, cogs=0 WHERE id=?',
+        [h.invoice_no, h.sale_date, h.customer_id, mode, cust?.state_code || '', h.notes || '', id]
+      )
+      let taxable = 0, cgst = 0, sgst = 0, igst = 0, total = 0, cogsTotal = 0
+      for (const it of h.items || []) {
+        const qty = Number(it.quantity) || 0
+        const rate = Number(it.rate) || 0
+        const gr = Number(it.gst_rate) || 0
+        if (qty <= 0 || !it.product_id) continue
+        const ups = one<{ units_per_box: number }>('SELECT units_per_box FROM products WHERE id = ?', [it.product_id])?.units_per_box || 1
+        const uom = it.uom === 'BOX' ? 'BOX' : 'EACH'
+        const packSize = uom === 'BOX' ? ups : 1
+        const baseQty = qty * packSize
+        const L = computeLine(qty, rate, gr, mode, inter)
+        const cogs = consumeFIFO(it.product_id, baseQty, 'SALE', id, h.sale_date)
+        insert(
+          `INSERT INTO sale_items (sale_id, product_id, quantity, rate, uom, pack_size, base_quantity, gst_rate, taxable_value, cgst, sgst, igst, line_total, cogs)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [id, it.product_id, qty, rate, uom, packSize, baseQty, gr, L.taxable, L.cgst, L.sgst, L.igst, L.lineTotal, cogs.cost]
+        )
+        taxable += L.taxable; cgst += L.cgst; sgst += L.sgst; igst += L.igst; total += L.lineTotal; cogsTotal += cogs.cost
+      }
+      run('UPDATE sales SET taxable_total=?, cgst=?, sgst=?, igst=?, grand_total=?, cogs=? WHERE id=?', [taxable, cgst, sgst, igst, total, cogsTotal, id])
+      return one('SELECT * FROM sales WHERE id = ?', [id])
+    })
   }
 }
 
@@ -875,6 +1117,14 @@ export const expenseRepo = {
       `INSERT INTO expenses (voucher_no, expense_date, category_id, description, amount, notes, created_at)
        VALUES (?,?,?,?,?,?,?)`,
       [h.voucher_no, h.expense_date, h.category_id || null, h.description || '', Number(h.amount) || 0, h.notes || '', now()]
+    )
+    save()
+    return one('SELECT * FROM expenses WHERE id = ?', [id])
+  },
+  update(id: number, h: any) {
+    run(
+      'UPDATE expenses SET voucher_no=?, expense_date=?, category_id=?, description=?, amount=?, notes=? WHERE id=?',
+      [h.voucher_no, h.expense_date, h.category_id || null, h.description || '', Number(h.amount) || 0, h.notes || '', id]
     )
     save()
     return one('SELECT * FROM expenses WHERE id = ?', [id])

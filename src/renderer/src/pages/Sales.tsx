@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { TrendingUp, Plus } from 'lucide-react'
+import { TrendingUp, Plus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { TransactionDialog } from '@/components/transactions/TransactionDialog'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +19,8 @@ export default function Sales(): JSX.Element {
   const [products, setProducts] = useState<Product[]>([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [editData, setEditData] = useState<any | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
 
   const load = (): void => {
     setLoading(true)
@@ -34,6 +37,34 @@ export default function Sales(): JSX.Element {
 
   const canSell = customers.filter((c) => c.is_active).length > 0 && products.length > 0
 
+  const openNew = (): void => {
+    setEditData(null)
+    setOpen(true)
+  }
+
+  const openEdit = async (r: any): Promise<void> => {
+    try {
+      const data = await window.api.sales.get(r.id)
+      setEditData(data)
+      setOpen(true)
+    } catch (e: any) {
+      toast.error(String(e.message))
+    }
+  }
+
+  const doDelete = async (): Promise<void> => {
+    if (!deleteTarget) return
+    try {
+      await window.api.sales.remove(deleteTarget.id)
+      toast.success('SALE DELETED — STOCK RESTORED')
+      load()
+    } catch (e: any) {
+      toast.error(String(e.message))
+    } finally {
+      setDeleteTarget(null)
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -41,7 +72,7 @@ export default function Sales(): JSX.Element {
         icon={TrendingUp}
         subtitle="SELL FINISHED GOODS — FIFO COST & GST APPLIED"
         actions={
-          <Button onClick={() => setOpen(true)} disabled={!canSell}>
+          <Button onClick={openNew} disabled={!canSell}>
             <Plus /> NEW SALE
           </Button>
         }
@@ -67,17 +98,18 @@ export default function Sales(): JSX.Element {
                 <TableHead className="text-right">GST</TableHead>
                 <TableHead className="text-right">GRAND TOTAL</TableHead>
                 <TableHead className="text-right">PROFIT</TableHead>
+                <TableHead className="w-24 text-right">ACTIONS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">LOADING…</TableCell>
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">LOADING…</TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                    NO SALES YET. CLICK “NEW SALE”.
+                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                    NO SALES YET. CLICK "NEW SALE".
                   </TableCell>
                 </TableRow>
               ) : (
@@ -94,6 +126,16 @@ export default function Sales(): JSX.Element {
                       <TableCell className="text-right tabular-nums">
                         <Badge variant={profit >= 0 ? 'success' : 'destructive'}>{formatMoney(profit, currency)}</Badge>
                       </TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(r)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteTarget(r)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   )
                 })
@@ -103,7 +145,26 @@ export default function Sales(): JSX.Element {
         </CardContent>
       </Card>
 
-      <TransactionDialog open={open} onOpenChange={setOpen} mode="SALE" parties={customers} products={products} onSaved={load} />
+      <TransactionDialog
+        open={open}
+        onOpenChange={(o) => { setOpen(o); if (!o) setEditData(null) }}
+        mode="SALE"
+        parties={customers}
+        products={products}
+        onSaved={load}
+        editId={editData?.id}
+        editData={editData}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="DELETE THIS SALE?"
+        description={`INVOICE ${deleteTarget?.invoice_no ?? ''} WILL BE PERMANENTLY REMOVED AND THE STOCK WILL BE RESTORED AT THE ORIGINAL FIFO COST.`}
+        confirmLabel="DELETE"
+        destructive
+        onConfirm={doDelete}
+      />
     </>
   )
 }

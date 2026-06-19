@@ -49,20 +49,29 @@ const api = {
   },
   purchases: {
     list: () => invoke<any[]>('purchases:list'),
+    get: (id: number) => invoke<any>('purchases:get', id),
     nextVoucher: () => invoke<string>('purchases:nextVoucher'),
-    create: (payload: any) => invoke<any>('purchases:create', payload)
+    create: (payload: any) => invoke<any>('purchases:create', payload),
+    update: (id: number, payload: any) => invoke<any>('purchases:update', id, payload),
+    remove: (id: number) => invoke<{ ok: boolean }>('purchases:remove', id)
   },
   productions: {
     list: () => invoke<any[]>('productions:list'),
+    get: (id: number) => invoke<any>('productions:get', id),
     nextVoucher: () => invoke<string>('productions:nextVoucher'),
     preview: (productId: number, outputQty: number) =>
       invoke<any[]>('productions:preview', productId, outputQty),
-    create: (payload: any) => invoke<any>('productions:create', payload)
+    create: (payload: any) => invoke<any>('productions:create', payload),
+    update: (id: number, payload: any) => invoke<any>('productions:update', id, payload),
+    remove: (id: number) => invoke<{ ok: boolean }>('productions:remove', id)
   },
   sales: {
     list: () => invoke<any[]>('sales:list'),
+    get: (id: number) => invoke<any>('sales:get', id),
     nextInvoice: () => invoke<string>('sales:nextInvoice'),
-    create: (payload: any) => invoke<any>('sales:create', payload)
+    create: (payload: any) => invoke<any>('sales:create', payload),
+    update: (id: number, payload: any) => invoke<any>('sales:update', id, payload),
+    remove: (id: number) => invoke<{ ok: boolean }>('sales:remove', id)
   },
   expenses: {
     list: () => invoke<any[]>('expenses:list'),
@@ -70,6 +79,7 @@ const api = {
     createCategory: (name: string) => invoke<any>('expenses:createCategory', name),
     nextVoucher: () => invoke<string>('expenses:nextVoucher'),
     create: (payload: any) => invoke<any>('expenses:create', payload),
+    update: (id: number, payload: any) => invoke<any>('expenses:update', id, payload),
     remove: (id: number) => invoke<{ ok: boolean }>('expenses:remove', id)
   },
   reports: {

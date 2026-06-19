@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Receipt, Plus, Trash2, Check } from 'lucide-react'
+import { Receipt, Plus, Trash2, Pencil, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Field } from '@/components/common/Field'
@@ -27,6 +27,8 @@ export default function Expenses(): JSX.Element {
   const [categories, setCategories] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
+  const [isEdit, setIsEdit] = useState(false)
+  const [editId, setEditId] = useState<number | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
 
   const [docNo, setDocNo] = useState('')
@@ -49,8 +51,9 @@ export default function Expenses(): JSX.Element {
   }
   useEffect(load, [])
 
-  useEffect(() => {
-    if (!open) return
+  const openNew = (): void => {
+    setIsEdit(false)
+    setEditId(null)
     setDate(todayISO())
     setCategoryId('')
     setDescription('')
@@ -58,7 +61,20 @@ export default function Expenses(): JSX.Element {
     setNewCat('')
     if (autoNumber) window.api.expenses.nextVoucher().then(setDocNo).catch(() => setDocNo(''))
     else setDocNo('')
-  }, [open, company])
+    setOpen(true)
+  }
+
+  const openEdit = (r: any): void => {
+    setIsEdit(true)
+    setEditId(r.id)
+    setDocNo(r.voucher_no)
+    setDate(r.expense_date)
+    setCategoryId(r.category_id ? String(r.category_id) : '')
+    setDescription(r.description || '')
+    setAmount(String(r.amount))
+    setNewCat('')
+    setOpen(true)
+  }
 
   const addCategory = async (): Promise<void> => {
     const name = newCat.trim().toUpperCase()
@@ -75,25 +91,31 @@ export default function Expenses(): JSX.Element {
     }
   }
 
-  const save = async (): Promise<void> => {
+  const doSave = async (): Promise<void> => {
     if (!(Number(amount) > 0)) {
       toast.error('ENTER AN AMOUNT GREATER THAN 0')
       return
     }
-    if (!autoNumber && !docNo.trim()) {
+    if (!docNo.trim()) {
       toast.error('PLEASE ENTER A VOUCHER NUMBER')
       return
     }
     setSaving(true)
     try {
-      await window.api.expenses.create({
+      const payload = {
         voucher_no: docNo,
         expense_date: date,
         category_id: categoryId ? Number(categoryId) : null,
         description,
         amount: Number(amount)
-      })
-      toast.success('EXPENSE SAVED')
+      }
+      if (isEdit && editId) {
+        await window.api.expenses.update(editId, payload)
+        toast.success('EXPENSE UPDATED')
+      } else {
+        await window.api.expenses.create(payload)
+        toast.success('EXPENSE SAVED')
+      }
       setOpen(false)
       load()
     } catch (e: any) {
@@ -111,6 +133,8 @@ export default function Expenses(): JSX.Element {
       load()
     } catch (e: any) {
       toast.error(String(e.message))
+    } finally {
+      setDeleteTarget(null)
     }
   }
 
@@ -123,7 +147,7 @@ export default function Expenses(): JSX.Element {
         icon={Receipt}
         subtitle="RUNNING COSTS THAT REDUCE NET PROFIT"
         actions={
-          <Button onClick={() => setOpen(true)}>
+          <Button onClick={openNew}>
             <Plus /> NEW EXPENSE
           </Button>
         }
@@ -139,7 +163,7 @@ export default function Expenses(): JSX.Element {
                 <TableHead>CATEGORY</TableHead>
                 <TableHead>DESCRIPTION</TableHead>
                 <TableHead className="text-right">AMOUNT</TableHead>
-                <TableHead className="w-16 text-right">ACTION</TableHead>
+                <TableHead className="w-24 text-right">ACTIONS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -150,7 +174,7 @@ export default function Expenses(): JSX.Element {
               ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
-                    NO EXPENSES YET. CLICK “NEW EXPENSE”.
+                    NO EXPENSES YET. CLICK "NEW EXPENSE".
                   </TableCell>
                 </TableRow>
               ) : (
@@ -162,7 +186,10 @@ export default function Expenses(): JSX.Element {
                     <TableCell className="font-medium">{r.description || '—'}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatMoney(r.amount, currency)}</TableCell>
                     <TableCell>
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(r)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteTarget(r)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -185,16 +212,16 @@ export default function Expenses(): JSX.Element {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>NEW EXPENSE</DialogTitle>
+            <DialogTitle>{isEdit ? 'EDIT EXPENSE' : 'NEW EXPENSE'}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="VOUCHER NO" required hint={autoNumber ? 'AUTO-GENERATED' : 'ENTER MANUALLY'}>
+            <Field label="VOUCHER NO" required hint={!isEdit && autoNumber ? 'AUTO-GENERATED' : undefined}>
               <Input
                 value={docNo}
                 onChange={(e) => setDocNo(e.target.value.toUpperCase())}
-                className={`uppercase ${autoNumber ? 'font-mono' : ''}`}
-                disabled={autoNumber}
-                placeholder={autoNumber ? '' : 'ENTER NUMBER'}
+                className={`uppercase ${!isEdit && autoNumber ? 'font-mono' : ''}`}
+                disabled={!isEdit && autoNumber}
+                placeholder={(!isEdit && autoNumber) ? '' : 'ENTER NUMBER'}
               />
             </Field>
             <Field label="DATE" required>
@@ -233,8 +260,8 @@ export default function Expenses(): JSX.Element {
             <Button variant="outline" onClick={() => setOpen(false)}>
               CANCEL
             </Button>
-            <Button onClick={save} disabled={saving}>
-              <Check /> {saving ? 'SAVING…' : 'SAVE EXPENSE'}
+            <Button onClick={doSave} disabled={saving}>
+              <Check /> {saving ? 'SAVING…' : isEdit ? 'UPDATE EXPENSE' : 'SAVE EXPENSE'}
             </Button>
           </DialogFooter>
         </DialogContent>
