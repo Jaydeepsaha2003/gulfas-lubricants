@@ -100,7 +100,7 @@ npm run build:win  # build + package a Windows installer (electron-builder)
 - [x] **M4 Production** — batch run against recipe, FIFO consume → finished lots at true cost
 - [x] **M5 Sales** — GST invoices, FIFO COGS, per-invoice profit
 - [x] **M6 Profit/Loss + Business Expenses + Dashboard P&L cards + monthly chart**
-- [x] **M7 Windows build** — electron-builder **portable .exe** + GitHub Actions release on tag
+- [x] **M7 Windows build** — electron-builder **NSIS one-click installer** (`-Setup.exe`; per-user, installs/updates in place, `createDesktopShortcut: always`, data in `%APPDATA%` preserved across updates/uninstall) + GitHub Actions release on tag
 - [x] **M8 Edit/delete** — Purchase/Production/Sales/Expenses are editable & deletable with FIFO stock reversal (delete/edit blocked if a purchase's stock or a batch's output was already consumed downstream)
 - [x] **M9 Unregistered parties + searchable selects** — vendors/customers carry `gst_registered` (0 = no GST → GSTIN cleared & disabled); all record-pick dropdowns (party, product, unit, material, category) use the searchable `<Combobox>`
 - [x] **M10 P&L layout + categories + storage tools** — P&L statement order (Purchases → Production Cost → Sales → Stock in Hand → Gross Profit → Business Expense → Net Profit) on Dashboard & P&L page; `product_categories` master (OIL/CAP/BOTTLE/SEAL…) with `products.category_id`; opening-stock RAW/FINISHED filter; **movable DB file** (`config.json` points at the sqlite — pick a Google-Drive folder via `setDbLocation`); **delete-all-data** (`resetData` wipes business data, keeps company/settings/units/categories); Purchase shows RAW only, Sales shows FINISHED only

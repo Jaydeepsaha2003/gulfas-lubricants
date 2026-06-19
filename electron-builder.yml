@@ -28,5 +28,19 @@ asarUnpack:
 
 win:
   target:
-    - portable
-  artifactName: Gulfas-Lubricants-${version}.${ext}
+    - nsis
+  artifactName: Gulfas-Lubricants-${version}-Setup.${ext}
+
+# One-click installer: double-click the setup → installs OR updates the existing
+# app in place, (re)creates the desktop + Start Menu shortcut, then launches.
+# Per-user (no admin prompt). Business data in %APPDATA% is kept across updates
+# and on uninstall.
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Gulfas Lubricants
+  uninstallDisplayName: Gulfas Lubricants
+  deleteAppDataOnUninstall: false
