@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Boxes, Download, Search } from 'lucide-react'
+import { Boxes, Download, Search, Layers } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
@@ -7,11 +7,27 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
 import { useCompany } from '@/lib/company-context'
 import { cn, formatMoney, formatQty } from '@/lib/utils'
 import type { InventoryRow } from '@shared/types'
 
 type Filter = 'ALL' | 'RAW' | 'FINISHED'
+
+const SOURCE_LABEL: Record<string, string> = {
+  OPENING: 'OPENING STOCK',
+  PURCHASE: 'PURCHASE',
+  PRODUCTION: 'PRODUCTION',
+  SALE_REVERSAL: 'SALE REVERSAL',
+  PROD_REVERSAL: 'PRODUCTION REVERSAL',
+  ADJUSTMENT: 'ADJUSTMENT'
+}
 
 export default function Inventory(): JSX.Element {
   const { currency } = useCompany()
@@ -19,6 +35,20 @@ export default function Inventory(): JSX.Element {
   const [filter, setFilter] = useState<Filter>('ALL')
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState<InventoryRow | null>(null)
+  const [lots, setLots] = useState<any[]>([])
+  const [lotsLoading, setLotsLoading] = useState(false)
+
+  const openLots = (r: InventoryRow): void => {
+    setSelected(r)
+    setLots([])
+    setLotsLoading(true)
+    window.api.inventory
+      .lots(r.product_id)
+      .then((l) => setLots(l))
+      .catch((e) => toast.error(String(e.message)))
+      .finally(() => setLotsLoading(false))
+  }
 
   const load = (): void => {
     setLoading(true)
@@ -76,7 +106,7 @@ export default function Inventory(): JSX.Element {
       <PageHeader
         title="STOCK"
         icon={Boxes}
-        subtitle="LIVE INVENTORY VALUED AT FIFO COST"
+        subtitle="LIVE INVENTORY VALUED AT FIFO COST — CLICK A ROW TO SEE ITS STOCK VOUCHERS"
         actions={
           <Button variant="outline" onClick={exportExcel} disabled={filtered.length === 0}>
             <Download /> EXPORT EXCEL
@@ -141,7 +171,12 @@ export default function Inventory(): JSX.Element {
                 filtered.map((r) => {
                   const low = r.reorder_level > 0 && r.qty <= r.reorder_level
                   return (
-                    <TableRow key={r.product_id}>
+                    <TableRow
+                      key={r.product_id}
+                      className="cursor-pointer"
+                      onClick={() => openLots(r)}
+                      title="CLICK TO SEE STOCK SOURCES (VOUCHERS)"
+                    >
                       <TableCell className="font-mono text-xs">{r.code}</TableCell>
                       <TableCell className="font-medium">{r.name}</TableCell>
                       <TableCell>
@@ -176,6 +211,80 @@ export default function Inventory(): JSX.Element {
           )}
         </CardContent>
       </Card>
+
+      {/* Stock sources (FIFO lots) for the clicked product */}
+      <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+        <DialogContent className="max-h-[88vh] max-w-3xl overflow-hidden">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <Layers className="h-5 w-5 text-primary" />
+              <DialogTitle>STOCK SOURCES — {selected?.name}</DialogTitle>
+            </div>
+            <DialogDescription>
+              THE AVAILABLE STOCK ({selected ? formatQty(selected.qty) : 0} {selected?.unit_name}) BROKEN DOWN BY THE VOUCHER
+              IT CAME FROM, OLDEST FIRST (FIFO).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] overflow-y-auto rounded-lg border">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-muted">
+                <TableRow>
+                  <TableHead>SOURCE</TableHead>
+                  <TableHead>VOUCHER</TableHead>
+                  <TableHead>DATE</TableHead>
+                  <TableHead className="text-right">AVAILABLE</TableHead>
+                  <TableHead className="text-right">UNIT COST</TableHead>
+                  <TableHead className="text-right">VALUE</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {lotsLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">LOADING…</TableCell>
+                  </TableRow>
+                ) : lots.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                      NO STOCK AVAILABLE FOR THIS PRODUCT.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  lots.map((l) => (
+                    <TableRow key={l.id}>
+                      <TableCell>
+                        <Badge variant={l.source_type === 'PURCHASE' ? 'default' : 'secondary'}>
+                          {SOURCE_LABEL[l.source_type] || l.source_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {l.voucher_no || '—'}
+                        {l.party_name ? <div className="text-[11px] text-muted-foreground">{l.party_name}</div> : null}
+                      </TableCell>
+                      <TableCell>{l.lot_date}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatQty(l.qty_remaining)}{' '}
+                        <span className="text-xs text-muted-foreground">/ {formatQty(l.qty_in)}</span>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney(l.unit_cost, currency)}</TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">{formatMoney(l.value, currency)}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {lots.length > 0 && (
+            <div className="flex items-center justify-end gap-2 text-sm">
+              <span className="text-muted-foreground">TOTAL AVAILABLE VALUE:</span>
+              <span className="text-base font-bold">
+                {formatMoney(lots.reduce((s, l) => s + (l.value || 0), 0), currency)}
+              </span>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

@@ -49,7 +49,8 @@ const api = {
     remove: (id: number) => invoke<{ ok: boolean }>('customers:remove', id)
   },
   inventory: {
-    list: (type?: string) => invoke<any[]>('inventory:list', type)
+    list: (type?: string) => invoke<any[]>('inventory:list', type),
+    lots: (productId: number) => invoke<any[]>('inventory:lots', productId)
   },
   purchases: {
     list: () => invoke<any[]>('purchases:list'),

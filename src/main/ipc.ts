@@ -80,6 +80,7 @@ export function registerIpc(): void {
 
   // ---- Inventory ----
   handle('inventory:list', (_e, type?: string) => inventoryRepo.list(type))
+  handle('inventory:lots', (_e, productId: number) => inventoryRepo.lots(productId))
 
   // ---- Opening stock ----
   handle('openingStock:save', (_e, rows) => openingStockRepo.save(rows))

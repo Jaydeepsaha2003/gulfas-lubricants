@@ -707,6 +707,28 @@ export const inventoryRepo = {
       GROUP BY p.id
       ORDER BY p.name`
     return type ? all(sql, [type]) : all(sql)
+  },
+  /** The still-available FIFO lots for a product, with the voucher each came from. */
+  lots(productId: number) {
+    return all(
+      `SELECT l.id, l.source_type, l.source_id, l.lot_date, l.qty_in, l.qty_remaining, l.unit_cost,
+        (l.qty_remaining * l.unit_cost) AS value,
+        CASE l.source_type
+          WHEN 'PURCHASE' THEN (SELECT voucher_no FROM purchases WHERE id = l.source_id)
+          WHEN 'PRODUCTION' THEN (SELECT voucher_no FROM productions WHERE id = l.source_id)
+          WHEN 'PROD_REVERSAL' THEN (SELECT voucher_no FROM productions WHERE id = l.source_id)
+          WHEN 'SALE_REVERSAL' THEN (SELECT invoice_no FROM sales WHERE id = l.source_id)
+          ELSE NULL
+        END AS voucher_no,
+        CASE l.source_type
+          WHEN 'PURCHASE' THEN (SELECT v.name FROM purchases pu JOIN vendors v ON v.id = pu.vendor_id WHERE pu.id = l.source_id)
+          ELSE NULL
+        END AS party_name
+       FROM stock_lots l
+       WHERE l.product_id = ? AND l.qty_remaining > 0
+       ORDER BY l.lot_date ASC, l.id ASC`,
+      [productId]
+    )
   }
 }
 
@@ -790,7 +812,9 @@ function nameOf(productId: number): string {
 export const purchaseRepo = {
   list() {
     return all(
-      `SELECT p.*, v.name AS vendor_name FROM purchases p
+      `SELECT p.*, v.name AS vendor_name,
+        (SELECT GROUP_CONCAT(pr.name, ', ') FROM purchase_items pi JOIN products pr ON pr.id = pi.product_id WHERE pi.purchase_id = p.id) AS items_text
+       FROM purchases p
        JOIN vendors v ON v.id = p.vendor_id
        ORDER BY p.purchase_date DESC, p.id DESC`
     )
@@ -1066,7 +1090,9 @@ export const productionRepo = {
 export const saleRepo = {
   list() {
     return all(
-      `SELECT s.*, c.name AS customer_name FROM sales s
+      `SELECT s.*, c.name AS customer_name,
+        (SELECT GROUP_CONCAT(p.name, ', ') FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.sale_id = s.id) AS items_text
+       FROM sales s
        JOIN customers c ON c.id = s.customer_id
        ORDER BY s.sale_date DESC, s.id DESC`
     )
