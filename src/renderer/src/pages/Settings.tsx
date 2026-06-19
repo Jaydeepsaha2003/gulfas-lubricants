@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCompany } from '@/lib/company-context'
-import type { Company, GstPricingMode } from '@shared/types'
+import type { Company, GstPricingMode, DocNumberingMode } from '@shared/types'
 
 type Form = Omit<Company, 'id' | 'updated_at'>
 
@@ -26,6 +26,7 @@ const EMPTY: Form = {
   email: '',
   logo_data: '',
   gst_pricing_mode: 'EXCLUSIVE',
+  doc_numbering: 'AUTOMATIC',
   currency_symbol: '₹',
   invoice_prefix: 'INV',
   financial_year_start: '04-01'
@@ -193,8 +194,28 @@ export default function Settings(): JSX.Element {
             <Field label="INVOICE PREFIX">
               <UpperInput value={form.invoice_prefix} onChange={(e) => set('invoice_prefix', e.target.value)} placeholder="INV" />
             </Field>
-            <Field label="FINANCIAL YEAR START" hint="FORMAT MM-DD (INDIA: 04-01)" className="col-span-2">
+            <Field label="FINANCIAL YEAR START" hint="FORMAT MM-DD (INDIA: 04-01)">
               <Input value={form.financial_year_start} onChange={(e) => set('financial_year_start', e.target.value)} placeholder="04-01" />
+            </Field>
+            <Field
+              label="DOCUMENT NUMBERING"
+              required
+              className="col-span-2"
+              hint={
+                form.doc_numbering === 'AUTOMATIC'
+                  ? 'INVOICE / VOUCHER NUMBERS ARE GENERATED FOR YOU AND LOCKED.'
+                  : 'YOU TYPE EACH INVOICE / VOUCHER NUMBER YOURSELF.'
+              }
+            >
+              <Select value={form.doc_numbering} onValueChange={(v) => set('doc_numbering', v as DocNumberingMode)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="AUTOMATIC">AUTOMATIC — GENERATE NUMBERS</SelectItem>
+                  <SelectItem value="MANUAL">MANUAL — I WILL TYPE NUMBERS</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
           </CardContent>
         </Card>

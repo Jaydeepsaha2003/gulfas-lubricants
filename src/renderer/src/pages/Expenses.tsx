@@ -21,7 +21,8 @@ import { useCompany } from '@/lib/company-context'
 import { formatMoney, todayISO } from '@/lib/utils'
 
 export default function Expenses(): JSX.Element {
-  const { currency } = useCompany()
+  const { currency, company } = useCompany()
+  const autoNumber = (company?.doc_numbering ?? 'AUTOMATIC') === 'AUTOMATIC'
   const [rows, setRows] = useState<any[]>([])
   const [categories, setCategories] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,8 +56,9 @@ export default function Expenses(): JSX.Element {
     setDescription('')
     setAmount('')
     setNewCat('')
-    window.api.expenses.nextVoucher().then(setDocNo).catch(() => setDocNo(''))
-  }, [open])
+    if (autoNumber) window.api.expenses.nextVoucher().then(setDocNo).catch(() => setDocNo(''))
+    else setDocNo('')
+  }, [open, company])
 
   const addCategory = async (): Promise<void> => {
     const name = newCat.trim().toUpperCase()
@@ -76,6 +78,10 @@ export default function Expenses(): JSX.Element {
   const save = async (): Promise<void> => {
     if (!(Number(amount) > 0)) {
       toast.error('ENTER AN AMOUNT GREATER THAN 0')
+      return
+    }
+    if (!autoNumber && !docNo.trim()) {
+      toast.error('PLEASE ENTER A VOUCHER NUMBER')
       return
     }
     setSaving(true)
@@ -182,8 +188,14 @@ export default function Expenses(): JSX.Element {
             <DialogTitle>NEW EXPENSE</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="VOUCHER NO" required>
-              <Input value={docNo} onChange={(e) => setDocNo(e.target.value.toUpperCase())} className="uppercase" />
+            <Field label="VOUCHER NO" required hint={autoNumber ? 'AUTO-GENERATED' : 'ENTER MANUALLY'}>
+              <Input
+                value={docNo}
+                onChange={(e) => setDocNo(e.target.value.toUpperCase())}
+                className={`uppercase ${autoNumber ? 'font-mono' : ''}`}
+                disabled={autoNumber}
+                placeholder={autoNumber ? '' : 'ENTER NUMBER'}
+              />
             </Field>
             <Field label="DATE" required>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />

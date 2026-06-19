@@ -31,7 +31,8 @@ interface PreviewRow {
 }
 
 export default function Production(): JSX.Element {
-  const { currency } = useCompany()
+  const { currency, company } = useCompany()
+  const autoNumber = (company?.doc_numbering ?? 'AUTOMATIC') === 'AUTOMATIC'
   const [rows, setRows] = useState<any[]>([])
   const [finished, setFinished] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,8 +66,9 @@ export default function Production(): JSX.Element {
     setOutputQty('1')
     setNotes('')
     setPreview([])
-    window.api.productions.nextVoucher().then(setDocNo).catch(() => setDocNo(''))
-  }, [open])
+    if (autoNumber) window.api.productions.nextVoucher().then(setDocNo).catch(() => setDocNo(''))
+    else setDocNo('')
+  }, [open, company])
 
   useEffect(() => {
     if (!open || !productId) {
@@ -88,6 +90,10 @@ export default function Production(): JSX.Element {
     }
     if (!(Number(outputQty) > 0)) {
       toast.error('OUTPUT QUANTITY MUST BE GREATER THAN 0')
+      return
+    }
+    if (!autoNumber && !docNo.trim()) {
+      toast.error('PLEASE ENTER A VOUCHER NUMBER')
       return
     }
     setSaving(true)
@@ -181,8 +187,14 @@ export default function Production(): JSX.Element {
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="VOUCHER NO" required>
-              <Input value={docNo} onChange={(e) => setDocNo(e.target.value.toUpperCase())} className="uppercase" />
+            <Field label="VOUCHER NO" required hint={autoNumber ? 'AUTO-GENERATED' : 'ENTER MANUALLY'}>
+              <Input
+                value={docNo}
+                onChange={(e) => setDocNo(e.target.value.toUpperCase())}
+                className={`uppercase ${autoNumber ? 'font-mono' : ''}`}
+                disabled={autoNumber}
+                placeholder={autoNumber ? '' : 'ENTER NUMBER'}
+              />
             </Field>
             <Field label="DATE" required>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />

@@ -58,10 +58,15 @@ export function TransactionDialog({
     setNotes('')
     setLines([blankLine()])
     setGstMode(company?.gst_pricing_mode || 'EXCLUSIVE')
-    const next = isPurchase ? window.api.purchases.nextVoucher() : window.api.sales.nextInvoice()
-    next.then(setDocNo).catch(() => setDocNo(''))
+    if ((company?.doc_numbering ?? 'AUTOMATIC') === 'AUTOMATIC') {
+      const next = isPurchase ? window.api.purchases.nextVoucher() : window.api.sales.nextInvoice()
+      next.then(setDocNo).catch(() => setDocNo(''))
+    } else {
+      setDocNo('')
+    }
   }, [open, company, isPurchase])
 
+  const autoNumber = (company?.doc_numbering ?? 'AUTOMATIC') === 'AUTOMATIC'
   const party = parties.find((p) => String(p.id) === partyId)
   const interState = !!party?.state_code && party.state_code !== (company?.state_code || '')
   const totals = summarize(lines, gstMode, interState)
@@ -81,6 +86,10 @@ export function TransactionDialog({
   const save = async (): Promise<void> => {
     if (!partyId) {
       toast.error(`PLEASE SELECT A ${isPurchase ? 'VENDOR' : 'CUSTOMER'}`)
+      return
+    }
+    if (!autoNumber && !docNo.trim()) {
+      toast.error(`PLEASE ENTER A ${isPurchase ? 'VOUCHER' : 'INVOICE'} NUMBER`)
       return
     }
     const items = lines
@@ -139,8 +148,14 @@ export function TransactionDialog({
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Field label={isPurchase ? 'VOUCHER NO' : 'INVOICE NO'} required>
-            <Input value={docNo} onChange={(e) => setDocNo(e.target.value.toUpperCase())} className="uppercase" />
+          <Field label={isPurchase ? 'VOUCHER NO' : 'INVOICE NO'} required hint={autoNumber ? 'AUTO-GENERATED' : 'ENTER MANUALLY'}>
+            <Input
+              value={docNo}
+              onChange={(e) => setDocNo(e.target.value.toUpperCase())}
+              className={`uppercase ${autoNumber ? 'font-mono' : ''}`}
+              disabled={autoNumber}
+              placeholder={autoNumber ? '' : 'ENTER NUMBER'}
+            />
           </Field>
           <Field label="DATE" required>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />

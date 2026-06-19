@@ -4,6 +4,7 @@
 
 export type ProductType = 'RAW' | 'FINISHED'
 export type GstPricingMode = 'INCLUSIVE' | 'EXCLUSIVE'
+export type DocNumberingMode = 'AUTOMATIC' | 'MANUAL'
 export type StockSource = 'OPENING' | 'PURCHASE' | 'PRODUCTION' | 'ADJUSTMENT'
 export type StockMoveType = 'IN' | 'OUT'
 
@@ -21,6 +22,7 @@ export interface Company {
   email: string
   logo_data: string // base64 data-url, may be empty
   gst_pricing_mode: GstPricingMode
+  doc_numbering: DocNumberingMode
   currency_symbol: string
   invoice_prefix: string
   financial_year_start: string // e.g. "04-01" (MM-DD)

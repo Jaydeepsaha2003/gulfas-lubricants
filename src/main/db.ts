@@ -32,6 +32,7 @@ export async function initDb(): Promise<void> {
   db = existsSync(dbPath) ? new SQL.Database(readFileSync(dbPath)) : new SQL.Database()
   db.run('PRAGMA foreign_keys = ON;')
   createSchema()
+  migrate()
   seed()
   save()
 }
@@ -110,6 +111,7 @@ function createSchema(): void {
     email TEXT NOT NULL DEFAULT '',
     logo_data TEXT NOT NULL DEFAULT '',
     gst_pricing_mode TEXT NOT NULL DEFAULT 'EXCLUSIVE',
+    doc_numbering TEXT NOT NULL DEFAULT 'AUTOMATIC',
     currency_symbol TEXT NOT NULL DEFAULT '₹',
     invoice_prefix TEXT NOT NULL DEFAULT 'INV',
     financial_year_start TEXT NOT NULL DEFAULT '04-01',
@@ -304,6 +306,18 @@ function createSchema(): void {
   `)
 }
 
+/** Add columns introduced after the first release to existing databases. */
+function ensureColumn(table: string, column: string, ddl: string): void {
+  const cols = all<{ name: string }>(`PRAGMA table_info(${table})`)
+  if (!cols.some((c) => c.name === column)) {
+    run(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
+  }
+}
+
+function migrate(): void {
+  ensureColumn('company', 'doc_numbering', "doc_numbering TEXT NOT NULL DEFAULT 'AUTOMATIC'")
+}
+
 function seed(): void {
   const hasCompany = one<{ c: number }>('SELECT COUNT(*) AS c FROM company')
   if (!hasCompany || hasCompany.c === 0) {
@@ -409,12 +423,12 @@ export const companyRepo = {
   save(c: Record<string, SqlValue>) {
     run(
       `UPDATE company SET name=?, gstin=?, address_line1=?, address_line2=?, city=?, state=?,
-        state_code=?, pincode=?, phone=?, email=?, logo_data=?, gst_pricing_mode=?, currency_symbol=?,
-        invoice_prefix=?, financial_year_start=?, updated_at=? WHERE id = 1`,
+        state_code=?, pincode=?, phone=?, email=?, logo_data=?, gst_pricing_mode=?, doc_numbering=?,
+        currency_symbol=?, invoice_prefix=?, financial_year_start=?, updated_at=? WHERE id = 1`,
       [
         c.name, c.gstin, c.address_line1, c.address_line2, c.city, c.state, c.state_code,
-        c.pincode, c.phone, c.email, c.logo_data, c.gst_pricing_mode, c.currency_symbol,
-        c.invoice_prefix, c.financial_year_start, now()
+        c.pincode, c.phone, c.email, c.logo_data, c.gst_pricing_mode, c.doc_numbering ?? 'AUTOMATIC',
+        c.currency_symbol, c.invoice_prefix, c.financial_year_start, now()
       ]
     )
     save()

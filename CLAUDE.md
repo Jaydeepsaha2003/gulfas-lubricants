@@ -62,6 +62,11 @@ so renderer code can just `try/await/catch` and `toast.error(e.message)`.
 5. **Master codes are auto-generated** and read-only in the UI — `productRepo.nextCode(type)`
    (`RM-####` / `FG-####`), `vendorRepo.nextCode()` (`VEN-####`), `customerRepo.nextCode()`
    (`CUS-####`). Sequence = max existing suffix + 1.
+6. **Document numbers** (sales invoice; purchase/production/expense voucher) follow
+   `company.doc_numbering`: `AUTOMATIC` → generated (`nextVoucher`/`nextInvoice`) and read-only;
+   `MANUAL` → user types it (required). Sales/Purchase support **multiple line items** per document.
+7. **DB migrations** are additive: `migrate()` in `db.ts` calls `ensureColumn()` to add new columns
+   to existing databases (since `CREATE TABLE IF NOT EXISTS` won't alter an existing table).
 
 ## Business rules
 
