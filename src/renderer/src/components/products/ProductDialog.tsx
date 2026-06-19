@@ -55,7 +55,7 @@ const emptyForm = (): FormState => ({
   category_id: '',
   unit_id: '',
   hsn_code: '',
-  gst_rate: '18',
+  gst_rate: '',
   purchase_price: '0',
   sale_price: '0',
   reorder_level: '0',
@@ -301,7 +301,7 @@ export function ProductDialog({
             <UpperInput value={form.hsn_code} onChange={(e) => set('hsn_code', e.target.value)} placeholder="2710" maxLength={8} />
           </Field>
           <Field label="GST RATE %">
-            <Input type="number" min="0" step="0.01" value={form.gst_rate} onChange={(e) => set('gst_rate', e.target.value)} />
+            <Input type="number" min="0" step="0.01" value={form.gst_rate} onChange={(e) => set('gst_rate', e.target.value)} placeholder="0" />
           </Field>
 
           {!isFinished ? (
