@@ -1,6 +1,6 @@
 import { dialog, BrowserWindow } from 'electron'
 import ExcelJS from 'exceljs'
-import { all, run, save, productRepo, unitRepo } from './db'
+import { all, run, save, productRepo, unitRepo, productCategoryRepo } from './db'
 import type { ImportResult } from '@shared/types'
 
 const HEADER_FILL: ExcelJS.Fill = {
@@ -56,6 +56,7 @@ const PRODUCT_COLUMNS = [
   { header: 'CODE', key: 'code', width: 16 },
   { header: 'NAME', key: 'name', width: 32 },
   { header: 'TYPE (RAW/FINISHED)', key: 'type', width: 20 },
+  { header: 'CATEGORY', key: 'category_name', width: 16 },
   { header: 'UNIT', key: 'unit_name', width: 12 },
   { header: 'HSN_CODE', key: 'hsn_code', width: 14 },
   { header: 'GST_RATE', key: 'gst_rate', width: 10 },
@@ -77,6 +78,7 @@ export async function downloadProductTemplate(win: BrowserWindow | null): Promis
       code: 'RM-BOTTLE-1L',
       name: 'PET BOTTLE 1 LITRE',
       type: 'RAW',
+      category_name: 'BOTTLE',
       unit_name: 'PCS',
       hsn_code: '3923',
       gst_rate: 18,
@@ -90,6 +92,7 @@ export async function downloadProductTemplate(win: BrowserWindow | null): Promis
       code: 'FG-ENGINE-OIL-1L',
       name: 'ENGINE OIL 1 LITRE BOTTLE',
       type: 'FINISHED',
+      category_name: 'OIL',
       unit_name: 'PCS',
       hsn_code: '2710',
       gst_rate: 18,
@@ -129,6 +132,8 @@ export async function importProducts(win: BrowserWindow | null): Promise<ImportR
 
   const units = unitRepo.list() as Array<{ id: number; name: string }>
   const unitByName = new Map(units.map((u) => [u.name, u.id]))
+  const cats = productCategoryRepo.list() as Array<{ id: number; name: string }>
+  const catByName = new Map(cats.map((c) => [c.name, c.id]))
 
   const cellVal = (row: ExcelJS.Row, header: string): unknown => {
     const idx = colIndex[header]
@@ -152,10 +157,21 @@ export async function importProducts(win: BrowserWindow | null): Promise<ImportR
         unitId = created.id
         unitByName.set(unitName, unitId)
       }
+      const catName = UP(cellVal(row, 'CATEGORY'))
+      let categoryId: number | null = null
+      if (catName) {
+        categoryId = catByName.get(catName) ?? null
+        if (!categoryId) {
+          const created = productCategoryRepo.create(catName) as { id: number }
+          categoryId = created.id
+          catByName.set(catName, categoryId)
+        }
+      }
       const payload = {
         code,
         name,
         type,
+        category_id: categoryId,
         unit_id: unitId,
         hsn_code: UP(cellVal(row, 'HSN_CODE')),
         gst_rate: NUM(cellVal(row, 'GST_RATE')),

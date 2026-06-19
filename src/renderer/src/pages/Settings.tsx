@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Settings as SettingsIcon, Save, Building2, MapPin, Percent, ImageIcon, Trash2 } from 'lucide-react'
+import { Settings as SettingsIcon, Save, Building2, MapPin, Percent, ImageIcon, Trash2, HardDrive, FolderInput, RotateCcw, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Field } from '@/components/common/Field'
 import { UpperInput } from '@/components/common/UpperInput'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,6 +40,9 @@ export default function Settings(): JSX.Element {
   const [form, setForm] = useState<Form>(EMPTY)
   const [errors, setErrors] = useState<Partial<Record<keyof Form, string>>>({})
   const [saving, setSaving] = useState(false)
+  const [dbInfo, setDbInfo] = useState<{ path: string; defaultPath: string; isDefault: boolean } | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [busyStorage, setBusyStorage] = useState(false)
 
   useEffect(() => {
     window.api.settings
@@ -47,7 +51,48 @@ export default function Settings(): JSX.Element {
         if (c) setForm({ ...EMPTY, ...c })
       })
       .catch(() => {})
+    window.api.db.getInfo().then(setDbInfo).catch(() => {})
   }, [])
+
+  const changeLocation = async (): Promise<void> => {
+    setBusyStorage(true)
+    try {
+      const res = await window.api.db.chooseLocation()
+      if (res.changed) {
+        const info = await window.api.db.getInfo()
+        setDbInfo(info)
+        toast.success('DATABASE MOVED — IT IS NOW STORED IN YOUR CHOSEN FOLDER')
+      }
+    } catch (e: any) {
+      toast.error(String(e.message))
+    } finally {
+      setBusyStorage(false)
+    }
+  }
+
+  const resetLocation = async (): Promise<void> => {
+    setBusyStorage(true)
+    try {
+      await window.api.db.resetLocation()
+      const info = await window.api.db.getInfo()
+      setDbInfo(info)
+      toast.success('DATABASE MOVED BACK TO THE DEFAULT LOCATION')
+    } catch (e: any) {
+      toast.error(String(e.message))
+    } finally {
+      setBusyStorage(false)
+    }
+  }
+
+  const deleteAllData = async (): Promise<void> => {
+    try {
+      await window.api.db.reset()
+      toast.success('ALL BUSINESS DATA DELETED — YOUR COMPANY SETTINGS ARE KEPT')
+      setTimeout(() => window.location.reload(), 700)
+    } catch (e: any) {
+      toast.error(String(e.message))
+    }
+  }
 
   const set = <K extends keyof Form>(key: K, value: Form[K]): void => {
     setForm((f) => ({ ...f, [key]: value }))
@@ -258,9 +303,65 @@ export default function Settings(): JSX.Element {
         </Card>
       </div>
 
+      {/* Data & storage */}
+      <Card className="mt-6">
+        <CardHeader className="flex-row items-center gap-2 space-y-0">
+          <HardDrive className="h-5 w-5 text-primary" />
+          <CardTitle>DATA &amp; STORAGE</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">DATABASE FILE LOCATION</div>
+            <div className="mt-1 break-all rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs">
+              {dbInfo?.path ?? '—'}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              MOVE YOUR DATA FILE INTO A SYNCED FOLDER (E.G. YOUR <b>GOOGLE DRIVE</b> / ONEDRIVE DESKTOP FOLDER) TO KEEP AN
+              AUTOMATIC OFF-SITE BACKUP. PICK THE FOLDER BELOW — THE APP COPIES THE DATABASE THERE AND USES IT FROM THEN ON.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={changeLocation} disabled={busyStorage}>
+              <FolderInput /> CHANGE LOCATION
+            </Button>
+            <Button variant="ghost" onClick={resetLocation} disabled={busyStorage || dbInfo?.isDefault}>
+              <RotateCcw /> RESET TO DEFAULT
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Danger zone */}
+      <Card className="mt-6 border-destructive/40">
+        <CardHeader className="flex-row items-center gap-2 space-y-0">
+          <AlertTriangle className="h-5 w-5 text-destructive" />
+          <CardTitle className="text-destructive">DANGER ZONE</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-muted-foreground">
+            PERMANENTLY DELETE ALL PRODUCTS, PARTIES, STOCK, PURCHASES, PRODUCTION, SALES &amp; EXPENSES.
+            <br />
+            YOUR COMPANY PROFILE, GST SETTINGS, UNITS &amp; CATEGORIES ARE <b>KEPT</b>.
+          </div>
+          <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
+            <Trash2 /> DELETE ALL DATA
+          </Button>
+        </CardContent>
+      </Card>
+
       <p className="mt-6 text-center text-xs text-muted-foreground">
         ALL DATA IS STORED LOCALLY ON THIS COMPUTER. FIELDS MARKED <span className="text-destructive">*</span> ARE MANDATORY.
       </p>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="DELETE ALL BUSINESS DATA?"
+        description="THIS PERMANENTLY ERASES ALL PRODUCTS, VENDORS, CUSTOMERS, STOCK, PURCHASES, PRODUCTION, SALES AND EXPENSES. YOUR COMPANY PROFILE AND SETTINGS ARE KEPT. THIS CANNOT BE UNDONE."
+        confirmLabel="DELETE EVERYTHING"
+        destructive
+        onConfirm={deleteAllData}
+      />
     </>
   )
 }

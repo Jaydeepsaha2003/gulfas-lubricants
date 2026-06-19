@@ -1,8 +1,9 @@
-import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
+import { ipcMain, BrowserWindow, IpcMainInvokeEvent, dialog } from 'electron'
 import {
   companyRepo,
   unitRepo,
   productRepo,
+  productCategoryRepo,
   recipeRepo,
   vendorRepo,
   customerRepo,
@@ -12,7 +13,11 @@ import {
   productionRepo,
   saleRepo,
   expenseRepo,
-  reportRepo
+  reportRepo,
+  getDbInfo,
+  setDbLocation,
+  resetDbLocation,
+  resetData
 } from './db'
 import { exportProducts, importProducts, downloadProductTemplate, exportRows } from './excel'
 import type { Result } from '@shared/types'
@@ -50,6 +55,10 @@ export function registerIpc(): void {
   handle('products:create', (_e, payload) => productRepo.create(payload))
   handle('products:update', (_e, id: number, payload) => productRepo.update(id, payload))
   handle('products:remove', (_e, id: number) => productRepo.remove(id))
+
+  // ---- Product categories ----
+  handle('productCategories:list', () => productCategoryRepo.list())
+  handle('productCategories:create', (_e, name: string) => productCategoryRepo.create(name))
 
   // ---- Recipes (BOM) ----
   handle('recipes:get', (_e, productId: number) => recipeRepo.get(productId))
@@ -115,6 +124,20 @@ export function registerIpc(): void {
   handle('reports:pnl', (_e, from?: string, to?: string) => reportRepo.pnl(from, to))
   handle('reports:monthly', () => reportRepo.monthly())
   handle('reports:dashboard', (_e, from?: string, to?: string) => reportRepo.dashboard(from, to))
+
+  // ---- Database / storage ----
+  handle('db:getInfo', () => getDbInfo())
+  handle('db:chooseLocation', async (e) => {
+    const res = await dialog.showOpenDialog(winOf(e) ?? undefined!, {
+      title: 'CHOOSE A FOLDER FOR THE DATABASE (E.G. YOUR GOOGLE DRIVE FOLDER)',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (res.canceled || !res.filePaths[0]) return { changed: false }
+    const path = setDbLocation(res.filePaths[0])
+    return { changed: true, path }
+  })
+  handle('db:resetLocation', () => ({ changed: true, path: resetDbLocation() }))
+  handle('db:reset', () => resetData())
 
   // ---- Excel ----
   handle('excel:exportProducts', (e) => exportProducts(winOf(e)))

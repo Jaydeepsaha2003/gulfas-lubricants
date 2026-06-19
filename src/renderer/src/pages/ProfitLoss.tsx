@@ -50,12 +50,6 @@ export default function ProfitLoss(): JSX.Element {
   }
 
   const net = pnl?.net_profit ?? 0
-  const cards = [
-    { label: 'REVENUE (NET OF GST)', value: pnl?.revenue ?? 0, tone: 'text-emerald-600 bg-emerald-600/10' },
-    { label: 'COST OF GOODS SOLD', value: pnl?.cogs ?? 0, tone: 'text-blue-600 bg-blue-600/10' },
-    { label: 'GROSS PROFIT', value: pnl?.gross_profit ?? 0, tone: 'text-violet-600 bg-violet-600/10' },
-    { label: 'BUSINESS EXPENSES', value: pnl?.expenses ?? 0, tone: 'text-amber-600 bg-amber-600/10' }
-  ]
 
   const chartData = monthly.map((m) => ({
     month: m.ym,
@@ -90,33 +84,55 @@ export default function ProfitLoss(): JSX.Element {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map((c) => (
-          <Card key={c.label}>
-            <CardContent className="p-5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{c.label}</div>
-              <div className="mt-1 text-2xl font-bold tabular-nums">{formatMoney(c.value, currency)}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Net profit banner */}
-      <Card className={cn('mt-4 border-2', net >= 0 ? 'border-success/40 bg-success/5' : 'border-destructive/40 bg-destructive/5')}>
-        <CardContent className="flex items-center justify-between py-5">
-          <div className="flex items-center gap-3">
-            <div className={cn('rounded-xl p-3', net >= 0 ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive')}>
-              {net >= 0 ? <TrendingUp className="h-7 w-7" /> : <TrendingDown className="h-7 w-7" />}
+      {/* P&L statement — fixed order: purchases → production → sales → stock → gross → expenses → net */}
+      <Card>
+        <CardHeader>
+          <CardTitle>PROFIT &amp; LOSS STATEMENT</CardTitle>
+        </CardHeader>
+        <CardContent className="divide-y">
+          {[
+            { label: 'PURCHASES', hint: `${pnl?.purchases_count ?? 0} VOUCHERS`, value: pnl?.purchases_total ?? 0 },
+            { label: 'PRODUCTION COST', hint: `${pnl?.production_count ?? 0} BATCHES`, value: pnl?.production_cost ?? 0 },
+            { label: 'SALES', hint: `${pnl?.sales_count ?? 0} INVOICES (NET OF GST)`, value: pnl?.revenue ?? 0 },
+            { label: 'STOCK IN HAND', hint: 'CURRENT FIFO VALUE', value: pnl?.stock_in_hand ?? 0 }
+          ].map((r) => (
+            <div key={r.label} className="flex items-center justify-between py-3">
+              <div>
+                <div className="text-sm font-medium">{r.label}</div>
+                <div className="text-[11px] uppercase text-muted-foreground">{r.hint}</div>
+              </div>
+              <div className="text-lg font-semibold tabular-nums">{formatMoney(r.value, currency)}</div>
             </div>
+          ))}
+
+          {/* Gross profit subtotal */}
+          <div className="flex items-center justify-between py-3">
             <div>
-              <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">NET PROFIT</div>
-              <div className="text-xs text-muted-foreground">
-                {pnl?.sales_count ?? 0} SALES · {formatMoney(pnl?.purchases_total ?? 0, currency)} PURCHASED
+              <div className="text-sm font-semibold text-violet-600">GROSS PROFIT</div>
+              <div className="text-[11px] uppercase text-muted-foreground">
+                SALES − COGS {formatMoney(pnl?.cogs ?? 0, currency)}
               </div>
             </div>
+            <div className="text-lg font-bold tabular-nums text-violet-600">{formatMoney(pnl?.gross_profit ?? 0, currency)}</div>
           </div>
-          <div className={cn('text-3xl font-bold tabular-nums', net >= 0 ? 'text-success' : 'text-destructive')}>
-            {formatMoney(net, currency)}
+
+          <div className="flex items-center justify-between py-3">
+            <div>
+              <div className="text-sm font-medium">BUSINESS EXPENSE</div>
+              <div className="text-[11px] uppercase text-muted-foreground">DEDUCTED FROM GROSS PROFIT</div>
+            </div>
+            <div className="text-lg font-semibold tabular-nums text-amber-600">− {formatMoney(pnl?.expenses ?? 0, currency)}</div>
+          </div>
+
+          {/* Net profit total */}
+          <div className={cn('flex items-center justify-between py-4', net >= 0 ? 'text-success' : 'text-destructive')}>
+            <div className="flex items-center gap-3">
+              <div className={cn('rounded-xl p-2.5', net >= 0 ? 'bg-success/15' : 'bg-destructive/15')}>
+                {net >= 0 ? <TrendingUp className="h-6 w-6" /> : <TrendingDown className="h-6 w-6" />}
+              </div>
+              <div className="text-base font-bold uppercase tracking-wide">NET PROFIT</div>
+            </div>
+            <div className="text-3xl font-bold tabular-nums">{formatMoney(net, currency)}</div>
           </div>
         </CardContent>
       </Card>

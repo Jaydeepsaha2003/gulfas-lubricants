@@ -103,6 +103,7 @@ npm run build:win  # build + package a Windows installer (electron-builder)
 - [x] **M7 Windows build** — electron-builder **portable .exe** + GitHub Actions release on tag
 - [x] **M8 Edit/delete** — Purchase/Production/Sales/Expenses are editable & deletable with FIFO stock reversal (delete/edit blocked if a purchase's stock or a batch's output was already consumed downstream)
 - [x] **M9 Unregistered parties + searchable selects** — vendors/customers carry `gst_registered` (0 = no GST → GSTIN cleared & disabled); all record-pick dropdowns (party, product, unit, material, category) use the searchable `<Combobox>`
+- [x] **M10 P&L layout + categories + storage tools** — P&L statement order (Purchases → Production Cost → Sales → Stock in Hand → Gross Profit → Business Expense → Net Profit) on Dashboard & P&L page; `product_categories` master (OIL/CAP/BOTTLE/SEAL…) with `products.category_id`; opening-stock RAW/FINISHED filter; **movable DB file** (`config.json` points at the sqlite — pick a Google-Drive folder via `setDbLocation`); **delete-all-data** (`resetData` wipes business data, keeps company/settings/units/categories); Purchase shows RAW only, Sales shows FINISHED only
 - [ ] _Future:_ PDF invoice printing, GSTR-style tax reports, custom app icon, data backup/restore UI
 
 All transaction logic (FIFO, GST split, production costing, P&L) is covered by an integration

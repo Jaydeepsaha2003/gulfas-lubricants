@@ -35,11 +35,19 @@ export interface Unit {
   created_at: string
 }
 
+export interface ProductCategory {
+  id: number
+  name: string
+  created_at: string
+}
+
 export interface Product {
   id: number
   code: string
   name: string
   type: ProductType
+  category_id?: number | null
+  category_name?: string
   unit_id: number
   unit_name?: string
   hsn_code: string

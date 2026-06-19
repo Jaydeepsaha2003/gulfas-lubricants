@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PackagePlus } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -14,8 +14,10 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Field } from '@/components/common/Field'
-import { todayISO } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 import type { Product } from '@shared/types'
+
+type StockFilter = 'ALL' | 'RAW' | 'FINISHED'
 
 interface OpeningStockDialogProps {
   open: boolean
@@ -38,6 +40,7 @@ export function OpeningStockDialog({
   const [rows, setRows] = useState<Record<number, RowState>>({})
   const [date, setDate] = useState(todayISO())
   const [saving, setSaving] = useState(false)
+  const [filter, setFilter] = useState<StockFilter>('ALL')
 
   useEffect(() => {
     if (!open) return
@@ -45,7 +48,13 @@ export function OpeningStockDialog({
     for (const p of products) init[p.id] = { qty: '', cost: String(p.purchase_price || 0) }
     setRows(init)
     setDate(todayISO())
+    setFilter('ALL')
   }, [open, products])
+
+  const visible = useMemo(
+    () => products.filter((p) => (filter === 'ALL' ? true : p.type === filter)),
+    [products, filter]
+  )
 
   const setRow = (id: number, key: keyof RowState, value: string): void =>
     setRows((r) => ({ ...r, [id]: { ...r[id], [key]: value } }))
@@ -90,9 +99,26 @@ export function OpeningStockDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Field label="AS ON DATE" required className="max-w-[200px]">
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </Field>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <Field label="AS ON DATE" required className="max-w-[200px]">
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </Field>
+          <div className="inline-flex rounded-lg border p-1">
+            {(['ALL', 'RAW', 'FINISHED'] as StockFilter[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setFilter(t)}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  filter === t ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {t === 'RAW' ? 'RAW MATERIALS' : t === 'FINISHED' ? 'FINISHED GOODS' : 'ALL'}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="max-h-[48vh] overflow-y-auto rounded-lg border">
           <Table>
@@ -105,14 +131,14 @@ export function OpeningStockDialog({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {products.length === 0 ? (
+              {visible.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                    NO PRODUCTS YET. ADD PRODUCTS FIRST.
+                    {products.length === 0 ? 'NO PRODUCTS YET. ADD PRODUCTS FIRST.' : 'NO PRODUCTS IN THIS GROUP.'}
                   </TableCell>
                 </TableRow>
               ) : (
-                products.map((p) => (
+                visible.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell>
                       <div className="font-medium">{p.name}</div>

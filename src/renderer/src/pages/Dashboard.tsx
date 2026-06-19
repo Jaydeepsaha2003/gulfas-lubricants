@@ -17,7 +17,7 @@ import {
   Tooltip,
   Legend
 } from 'recharts'
-import { LayoutDashboard, Wallet, TrendingUp, TrendingDown, Boxes, AlertTriangle, ArrowRight } from 'lucide-react'
+import { LayoutDashboard, Wallet, TrendingUp, TrendingDown, Boxes, AlertTriangle, ArrowRight, ShoppingCart, Factory } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -105,7 +105,10 @@ export default function Dashboard(): JSX.Element {
     setTo(t)
   }
 
-  const k = data?.kpis ?? { revenue: 0, cogs: 0, gross_profit: 0, expenses: 0, net_profit: 0, sales_count: 0, units_sold: 0 }
+  const k = data?.kpis ?? {
+    revenue: 0, cogs: 0, gross_profit: 0, expenses: 0, net_profit: 0, sales_count: 0,
+    units_sold: 0, purchases_total: 0, production_cost: 0, stock_in_hand: 0
+  }
   const net = k.net_profit ?? 0
 
   const monthly = useMemo(
@@ -141,9 +144,12 @@ export default function Dashboard(): JSX.Element {
   const moneyTip = (v: any): string => formatMoney(Number(v) || 0, currency)
 
   const kpis = [
-    { label: 'REVENUE', value: formatMoney(k.revenue, currency), sub: `${k.sales_count} SALES`, tone: 'text-emerald-600 bg-emerald-600/10', icon: TrendingUp },
+    { label: 'PURCHASES', value: formatMoney(k.purchases_total, currency), sub: 'RAW MATERIALS BOUGHT', tone: 'text-blue-600 bg-blue-600/10', icon: ShoppingCart },
+    { label: 'PRODUCTION COST', value: formatMoney(k.production_cost, currency), sub: 'INPUT COST OF BATCHES', tone: 'text-cyan-600 bg-cyan-600/10', icon: Factory },
+    { label: 'SALES', value: formatMoney(k.revenue, currency), sub: `${k.sales_count} SALES (NET OF GST)`, tone: 'text-emerald-600 bg-emerald-600/10', icon: TrendingUp },
+    { label: 'STOCK IN HAND', value: formatMoney(k.stock_in_hand, currency), sub: 'CURRENT FIFO VALUE', tone: 'text-indigo-600 bg-indigo-600/10', icon: Boxes },
     { label: 'GROSS PROFIT', value: formatMoney(k.gross_profit, currency), sub: `${formatQty(k.units_sold)} UNITS SOLD`, tone: 'text-violet-600 bg-violet-600/10', icon: Wallet },
-    { label: 'EXPENSES', value: formatMoney(k.expenses, currency), sub: 'BUSINESS COSTS', tone: 'text-amber-600 bg-amber-600/10', icon: TrendingDown },
+    { label: 'BUSINESS EXPENSE', value: formatMoney(k.expenses, currency), sub: 'RUNNING COSTS', tone: 'text-amber-600 bg-amber-600/10', icon: TrendingDown },
     { label: 'NET PROFIT', value: formatMoney(net, currency), sub: net >= 0 ? 'IN PROFIT' : 'IN LOSS', tone: net >= 0 ? 'text-emerald-600 bg-emerald-600/10' : 'text-destructive bg-destructive/10', icon: net >= 0 ? TrendingUp : TrendingDown }
   ]
 

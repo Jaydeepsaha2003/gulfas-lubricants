@@ -24,7 +24,7 @@ export default function Sales(): JSX.Element {
 
   const load = (): void => {
     setLoading(true)
-    Promise.all([window.api.sales.list(), window.api.customers.list(), window.api.products.list()])
+    Promise.all([window.api.sales.list(), window.api.customers.list(), window.api.products.list('FINISHED')])
       .then(([s, c, pr]) => {
         setRows(s)
         setCustomers(c as Party[])

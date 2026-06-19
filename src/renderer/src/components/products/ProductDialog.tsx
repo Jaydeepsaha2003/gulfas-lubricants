@@ -16,7 +16,7 @@ import { Combobox } from '@/components/common/Combobox'
 import { Field } from '@/components/common/Field'
 import { UpperInput } from '@/components/common/UpperInput'
 import { cn } from '@/lib/utils'
-import type { Product, ProductType, Unit } from '@shared/types'
+import type { Product, ProductType, ProductCategory, Unit } from '@shared/types'
 
 interface RecipeRow {
   component_product_id: string
@@ -37,6 +37,7 @@ interface FormState {
   code: string
   name: string
   type: ProductType
+  category_id: string
   unit_id: string
   hsn_code: string
   gst_rate: string
@@ -51,6 +52,7 @@ const emptyForm = (): FormState => ({
   code: '',
   name: '',
   type: 'RAW',
+  category_id: '',
   unit_id: '',
   hsn_code: '',
   gst_rate: '18',
@@ -75,16 +77,29 @@ export function ProductDialog({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [newUnit, setNewUnit] = useState('')
+  const [categories, setCategories] = useState<ProductCategory[]>([])
+  const [newCat, setNewCat] = useState('')
+
+  const loadCategories = async (): Promise<void> => {
+    const c = await window.api.productCategories.list()
+    setCategories(c as ProductCategory[])
+  }
+  useEffect(() => {
+    if (!open) return
+    loadCategories().catch(() => {})
+  }, [open])
 
   useEffect(() => {
     if (!open) return
     setErrors({})
     setNewUnit('')
+    setNewCat('')
     if (product) {
       setForm({
         code: product.code,
         name: product.name,
         type: product.type,
+        category_id: product.category_id ? String(product.category_id) : '',
         unit_id: String(product.unit_id),
         hsn_code: product.hsn_code,
         gst_rate: String(product.gst_rate),
@@ -145,6 +160,20 @@ export function ProductDialog({
     }
   }
 
+  const addCategory = async (): Promise<void> => {
+    const name = newCat.trim().toUpperCase()
+    if (!name) return
+    try {
+      const c = await window.api.productCategories.create(name)
+      await loadCategories()
+      set('category_id', String(c.id))
+      setNewCat('')
+      toast.success(`CATEGORY ${name} ADDED`)
+    } catch (e: any) {
+      toast.error(String(e.message))
+    }
+  }
+
   const addRecipeRow = (): void =>
     setRecipe((r) => [...r, { component_product_id: '', quantity: '1' }])
   const removeRecipeRow = (i: number): void => setRecipe((r) => r.filter((_, idx) => idx !== i))
@@ -166,6 +195,7 @@ export function ProductDialog({
         code: form.code.trim().toUpperCase(),
         name: form.name.trim().toUpperCase(),
         type: form.type,
+        category_id: form.category_id ? Number(form.category_id) : null,
         unit_id: Number(form.unit_id),
         hsn_code: form.hsn_code.trim().toUpperCase(),
         gst_rate: Number(form.gst_rate) || 0,
@@ -243,6 +273,25 @@ export function ProductDialog({
             <div className="flex gap-2">
               <UpperInput value={newUnit} onChange={(e) => setNewUnit(e.target.value)} placeholder="E.G. DRUM" />
               <Button type="button" variant="outline" size="icon" onClick={addUnit} disabled={!newUnit.trim()}>
+                <Plus />
+              </Button>
+            </div>
+          </Field>
+
+          <Field label="CATEGORY" hint="E.G. OIL, BOTTLE, CAP, SEAL">
+            <Combobox
+              value={form.category_id}
+              onValueChange={(v) => set('category_id', v)}
+              options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+              placeholder="SELECT CATEGORY"
+              searchPlaceholder="SEARCH CATEGORY"
+              emptyText="NO CATEGORIES — ADD ONE"
+            />
+          </Field>
+          <Field label="ADD A NEW CATEGORY" hint="OPTIONAL — TYPE & CLICK +">
+            <div className="flex gap-2">
+              <UpperInput value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="E.G. ADDITIVE" />
+              <Button type="button" variant="outline" size="icon" onClick={addCategory} disabled={!newCat.trim()}>
                 <Plus />
               </Button>
             </div>

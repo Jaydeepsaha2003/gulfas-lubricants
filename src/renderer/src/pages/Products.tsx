@@ -172,6 +172,7 @@ export default function Products(): JSX.Element {
                 <TableHead>CODE</TableHead>
                 <TableHead>NAME</TableHead>
                 <TableHead>TYPE</TableHead>
+                <TableHead>CATEGORY</TableHead>
                 <TableHead>UNIT</TableHead>
                 <TableHead>HSN</TableHead>
                 <TableHead className="text-right">GST %</TableHead>
@@ -182,13 +183,13 @@ export default function Products(): JSX.Element {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
                     LOADING…
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
                     NO PRODUCTS YET. CLICK “NEW PRODUCT” OR IMPORT FROM EXCEL.
                   </TableCell>
                 </TableRow>
@@ -200,6 +201,7 @@ export default function Products(): JSX.Element {
                     <TableCell>
                       <Badge variant={p.type === 'FINISHED' ? 'default' : 'secondary'}>{p.type}</Badge>
                     </TableCell>
+                    <TableCell className="text-muted-foreground">{p.category_name || '—'}</TableCell>
                     <TableCell className="text-muted-foreground">{p.unit_name}</TableCell>
                     <TableCell className="font-mono text-xs">{p.hsn_code || '—'}</TableCell>
                     <TableCell className="text-right tabular-nums">{p.gst_rate}%</TableCell>

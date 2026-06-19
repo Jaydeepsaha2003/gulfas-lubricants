@@ -26,6 +26,10 @@ const api = {
     update: (id: number, payload: any) => invoke<any>('products:update', id, payload),
     remove: (id: number) => invoke<{ ok: boolean }>('products:remove', id)
   },
+  productCategories: {
+    list: () => invoke<any[]>('productCategories:list'),
+    create: (name: string) => invoke<any>('productCategories:create', name)
+  },
   recipes: {
     get: (productId: number) => invoke<any[]>('recipes:get', productId),
     save: (productId: number, lines: any[]) => invoke<any[]>('recipes:save', productId, lines)
@@ -86,6 +90,12 @@ const api = {
     pnl: (from?: string, to?: string) => invoke<any>('reports:pnl', from, to),
     monthly: () => invoke<any[]>('reports:monthly'),
     dashboard: (from?: string, to?: string) => invoke<any>('reports:dashboard', from, to)
+  },
+  db: {
+    getInfo: () => invoke<{ path: string; defaultPath: string; isDefault: boolean }>('db:getInfo'),
+    chooseLocation: () => invoke<{ changed: boolean; path?: string }>('db:chooseLocation'),
+    resetLocation: () => invoke<{ changed: boolean; path: string }>('db:resetLocation'),
+    reset: () => invoke<{ ok: boolean }>('db:reset')
   },
   openingStock: {
     save: (rows: any[]) => invoke<{ inserted: number }>('openingStock:save', rows)

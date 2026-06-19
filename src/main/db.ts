@@ -5,8 +5,26 @@ import initSqlJs, { Database, SqlValue } from 'sql.js'
 
 let db: Database
 let dbPath: string
+let defaultDbPath: string
+let configPath: string
 
 const now = (): string => new Date().toISOString()
+
+// The DB file location can be moved (e.g. to a Google Drive folder). The chosen
+// path is remembered in config.json (which always lives in userData).
+interface AppConfig {
+  dbPath?: string
+}
+function readConfig(): AppConfig {
+  try {
+    return JSON.parse(readFileSync(configPath, 'utf-8')) as AppConfig
+  } catch {
+    return {}
+  }
+}
+function writeConfig(cfg: AppConfig): void {
+  writeFileSync(configPath, JSON.stringify(cfg, null, 2))
+}
 
 // ---------------------------------------------------------------------------
 // Connection + persistence
@@ -15,7 +33,20 @@ const now = (): string => new Date().toISOString()
 export async function initDb(): Promise<void> {
   const userDir = app.getPath('userData')
   if (!existsSync(userDir)) mkdirSync(userDir, { recursive: true })
-  dbPath = join(userDir, 'gulfas.sqlite')
+  configPath = join(userDir, 'config.json')
+  defaultDbPath = join(userDir, 'gulfas.sqlite')
+
+  // Resolve where the DB lives: a custom path from config (if its folder is
+  // reachable) or the default in userData. Falls back safely if the custom
+  // folder is missing (e.g. an unmounted drive).
+  const cfg = readConfig()
+  dbPath = cfg.dbPath && typeof cfg.dbPath === 'string' ? cfg.dbPath : defaultDbPath
+  try {
+    const dir = dirname(dbPath)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  } catch {
+    dbPath = defaultDbPath
+  }
 
   // sql.js ships the wasm next to its JS entry. Read the bytes ourselves and
   // hand them to the loader via `wasmBinary` — this works in dev AND inside the
@@ -41,6 +72,47 @@ export function save(): void {
   if (!db) return
   const data = db.export()
   writeFileSync(dbPath, Buffer.from(data))
+}
+
+// ---------------------------------------------------------------------------
+// Storage location (move DB to a synced folder, e.g. Google Drive)
+// ---------------------------------------------------------------------------
+
+export function getDbInfo(): { path: string; defaultPath: string; isDefault: boolean } {
+  return { path: dbPath, defaultPath: defaultDbPath, isDefault: dbPath === defaultDbPath }
+}
+
+/** Copy the live DB into `newDir` and switch all future reads/writes there. */
+export function setDbLocation(newDir: string): string {
+  if (!newDir) throw new Error('NO FOLDER SELECTED')
+  if (!existsSync(newDir)) mkdirSync(newDir, { recursive: true })
+  const newPath = join(newDir, 'gulfas.sqlite')
+  writeFileSync(newPath, Buffer.from(db.export()))
+  dbPath = newPath
+  writeConfig({ dbPath: newPath })
+  return newPath
+}
+
+/** Move the DB back to the default location in userData. */
+export function resetDbLocation(): string {
+  if (!existsSync(dirname(defaultDbPath))) mkdirSync(dirname(defaultDbPath), { recursive: true })
+  writeFileSync(defaultDbPath, Buffer.from(db.export()))
+  dbPath = defaultDbPath
+  writeConfig({})
+  return defaultDbPath
+}
+
+/** Erase all business data but KEEP company profile, settings, units & categories. */
+export function resetData(): { ok: true } {
+  return tx(() => {
+    for (const t of [
+      'sale_items', 'production_inputs', 'purchase_items', 'stock_moves', 'stock_lots',
+      'sales', 'productions', 'purchases', 'product_recipes', 'products', 'vendors', 'customers', 'expenses'
+    ]) {
+      run(`DELETE FROM ${t}`)
+    }
+    return { ok: true as const }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -124,11 +196,18 @@ function createSchema(): void {
     created_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS product_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('RAW','FINISHED')),
+    category_id INTEGER REFERENCES product_categories(id),
     unit_id INTEGER NOT NULL REFERENCES units(id),
     hsn_code TEXT NOT NULL DEFAULT '',
     gst_rate REAL NOT NULL DEFAULT 0,
@@ -337,6 +416,7 @@ function migrate(): void {
   if (ensureColumn('customers', 'gst_registered', 'gst_registered INTEGER NOT NULL DEFAULT 1')) {
     run("UPDATE customers SET gst_registered = CASE WHEN TRIM(gstin) <> '' THEN 1 ELSE 0 END")
   }
+  ensureColumn('products', 'category_id', 'category_id INTEGER')
 }
 
 function seed(): void {
@@ -354,6 +434,12 @@ function seed(): void {
   if (!catCount || catCount.c === 0) {
     for (const c of ['RENT', 'SALARY', 'ELECTRICITY', 'TRANSPORT', 'PACKAGING', 'MARKETING', 'MISCELLANEOUS']) {
       run('INSERT INTO expense_categories (name, created_at) VALUES (?, ?)', [c, now()])
+    }
+  }
+  const pcatCount = one<{ c: number }>('SELECT COUNT(*) AS c FROM product_categories')
+  if (!pcatCount || pcatCount.c === 0) {
+    for (const c of ['OIL', 'GREASE', 'BOTTLE', 'CAP', 'SEAL', 'STICKER', 'LABEL', 'CARTON', 'BOX']) {
+      run('INSERT INTO product_categories (name, created_at) VALUES (?, ?)', [c, now()])
     }
   }
 }
@@ -468,30 +554,45 @@ export const unitRepo = {
   }
 }
 
+export const productCategoryRepo = {
+  list() {
+    return all('SELECT * FROM product_categories ORDER BY name')
+  },
+  create(name: string) {
+    const id = insert('INSERT INTO product_categories (name, created_at) VALUES (?, ?)', [name, now()])
+    save()
+    return one('SELECT * FROM product_categories WHERE id = ?', [id])
+  }
+}
+
 export const productRepo = {
   nextCode(type: string) {
     return nextCode('products', type === 'FINISHED' ? 'FG' : 'RM')
   },
   list(type?: string) {
-    const sql = `SELECT p.*, u.name AS unit_name FROM products p
+    const sql = `SELECT p.*, u.name AS unit_name, pc.name AS category_name FROM products p
                  JOIN units u ON u.id = p.unit_id
+                 LEFT JOIN product_categories pc ON pc.id = p.category_id
                  ${type ? 'WHERE p.type = ?' : ''}
                  ORDER BY p.name`
     return type ? all(sql, [type]) : all(sql)
   },
   get(id: number) {
     return one(
-      `SELECT p.*, u.name AS unit_name FROM products p JOIN units u ON u.id = p.unit_id WHERE p.id = ?`,
+      `SELECT p.*, u.name AS unit_name, pc.name AS category_name FROM products p
+       JOIN units u ON u.id = p.unit_id
+       LEFT JOIN product_categories pc ON pc.id = p.category_id
+       WHERE p.id = ?`,
       [id]
     )
   },
   create(p: Record<string, SqlValue>) {
     const id = insert(
-      `INSERT INTO products (code, name, type, unit_id, hsn_code, gst_rate, purchase_price, sale_price,
+      `INSERT INTO products (code, name, type, category_id, unit_id, hsn_code, gst_rate, purchase_price, sale_price,
         reorder_level, recipe_output_qty, units_per_box, is_active, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        p.code, p.name, p.type, p.unit_id, p.hsn_code, p.gst_rate, p.purchase_price, p.sale_price,
+        p.code, p.name, p.type, p.category_id ?? null, p.unit_id, p.hsn_code, p.gst_rate, p.purchase_price, p.sale_price,
         p.reorder_level, p.recipe_output_qty, p.units_per_box ?? 1, p.is_active ?? 1, now(), now()
       ]
     )
@@ -500,10 +601,10 @@ export const productRepo = {
   },
   update(id: number, p: Record<string, SqlValue>) {
     run(
-      `UPDATE products SET code=?, name=?, type=?, unit_id=?, hsn_code=?, gst_rate=?, purchase_price=?,
+      `UPDATE products SET code=?, name=?, type=?, category_id=?, unit_id=?, hsn_code=?, gst_rate=?, purchase_price=?,
         sale_price=?, reorder_level=?, recipe_output_qty=?, units_per_box=?, is_active=?, updated_at=? WHERE id=?`,
       [
-        p.code, p.name, p.type, p.unit_id, p.hsn_code, p.gst_rate, p.purchase_price, p.sale_price,
+        p.code, p.name, p.type, p.category_id ?? null, p.unit_id, p.hsn_code, p.gst_rate, p.purchase_price, p.sale_price,
         p.reorder_level, p.recipe_output_qty, p.units_per_box ?? 1, p.is_active ?? 1, now(), id
       ]
     )
@@ -1160,6 +1261,11 @@ export const reportRepo = {
       'SELECT COALESCE(SUM(taxable_total),0) AS amt, COUNT(*) AS cnt FROM purchases WHERE purchase_date BETWEEN ? AND ?',
       [f, t]
     )!
+    const production = one<{ cost: number; cnt: number }>(
+      'SELECT COALESCE(SUM(total_input_cost),0) AS cost, COUNT(*) AS cnt FROM productions WHERE production_date BETWEEN ? AND ?',
+      [f, t]
+    )!
+    const stock = one<{ val: number }>('SELECT COALESCE(SUM(qty_remaining * unit_cost),0) AS val FROM stock_lots WHERE qty_remaining > 0')!
     const grossProfit = sales.rev - sales.cogs
     const byCategory = all(
       `SELECT COALESCE(c.name,'UNCATEGORISED') AS name, SUM(e.amount) AS amount
@@ -1176,6 +1282,9 @@ export const reportRepo = {
       sales_count: sales.cnt,
       purchases_total: purchases.amt,
       purchases_count: purchases.cnt,
+      production_cost: production.cost,
+      production_count: production.cnt,
+      stock_in_hand: stock.val,
       expense_by_category: byCategory
     }
   },
@@ -1199,6 +1308,11 @@ export const reportRepo = {
       'SELECT COALESCE(SUM(taxable_total),0) AS amt, COUNT(*) AS cnt FROM purchases WHERE purchase_date BETWEEN ? AND ?',
       [f, t]
     )!
+    const production = one<{ cost: number }>(
+      'SELECT COALESCE(SUM(total_input_cost),0) AS cost FROM productions WHERE production_date BETWEEN ? AND ?',
+      [f, t]
+    )!
+    const stock = one<{ val: number }>('SELECT COALESCE(SUM(qty_remaining * unit_cost),0) AS val FROM stock_lots WHERE qty_remaining > 0')!
     const units = one<{ q: number }>(
       'SELECT COALESCE(SUM(COALESCE(NULLIF(si.base_quantity,0), si.quantity)),0) AS q FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.sale_date BETWEEN ? AND ?',
       [f, t]
@@ -1259,6 +1373,8 @@ export const reportRepo = {
         net_profit: grossProfit - exp.amt,
         sales_count: sales.cnt,
         purchases_total: purch.amt,
+        production_cost: production.cost,
+        stock_in_hand: stock.val,
         units_sold: units.q
       },
       monthly,

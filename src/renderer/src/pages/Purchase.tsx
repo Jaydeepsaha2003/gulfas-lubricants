@@ -23,7 +23,7 @@ export default function Purchase(): JSX.Element {
 
   const load = (): void => {
     setLoading(true)
-    Promise.all([window.api.purchases.list(), window.api.vendors.list(), window.api.products.list()])
+    Promise.all([window.api.purchases.list(), window.api.vendors.list(), window.api.products.list('RAW')])
       .then(([p, v, pr]) => {
         setRows(p)
         setVendors(v as Party[])
