@@ -22,12 +22,21 @@ import { formatMoney, formatQty, todayISO } from '@/lib/utils'
 import type { Product } from '@shared/types'
 
 interface PreviewRow {
+  component_product_id: number
   component_name: string
   component_unit: string
   per_batch: number
   required: number
   available: number
   short: boolean
+}
+
+interface InputRow {
+  component_product_id: number
+  component_name: string
+  component_unit: string
+  quantity: string
+  available: number
 }
 
 export default function Production(): JSX.Element {
@@ -44,7 +53,7 @@ export default function Production(): JSX.Element {
   const [productId, setProductId] = useState('')
   const [outputQty, setOutputQty] = useState('1')
   const [notes, setNotes] = useState('')
-  const [preview, setPreview] = useState<PreviewRow[]>([])
+  const [inputs, setInputs] = useState<InputRow[]>([])
   const [saving, setSaving] = useState(false)
 
   const load = (): void => {
@@ -65,23 +74,33 @@ export default function Production(): JSX.Element {
     setProductId('')
     setOutputQty('1')
     setNotes('')
-    setPreview([])
+    setInputs([])
     if (autoNumber) window.api.productions.nextVoucher().then(setDocNo).catch(() => setDocNo(''))
     else setDocNo('')
   }, [open, company])
 
   useEffect(() => {
     if (!open || !productId) {
-      setPreview([])
+      setInputs([])
       return
     }
     window.api.productions
       .preview(Number(productId), Number(outputQty) || 0)
-      .then((p) => setPreview(p as PreviewRow[]))
-      .catch(() => setPreview([]))
+      .then((p) =>
+        setInputs(
+          (p as PreviewRow[]).map((r) => ({
+            component_product_id: r.component_product_id,
+            component_name: r.component_name,
+            component_unit: r.component_unit,
+            quantity: String(r.required),
+            available: r.available
+          }))
+        )
+      )
+      .catch(() => setInputs([]))
   }, [open, productId, outputQty])
 
-  const anyShort = preview.some((p) => p.short)
+  const anyShort = inputs.some((r) => Number(r.quantity) > r.available + 1e-9)
 
   const save = async (): Promise<void> => {
     if (!productId) {
@@ -103,6 +122,7 @@ export default function Production(): JSX.Element {
         production_date: date,
         product_id: Number(productId),
         output_qty: Number(outputQty),
+        inputs: inputs.map((r) => ({ component_product_id: r.component_product_id, quantity: Number(r.quantity) })),
         notes
       })
       toast.success('PRODUCTION COMPLETE — FINISHED GOODS ADDED TO STOCK')
@@ -219,10 +239,13 @@ export default function Production(): JSX.Element {
           </div>
 
           <div className="rounded-lg border bg-muted/30 p-3">
-            <div className="mb-2 text-sm font-semibold">MATERIALS REQUIRED</div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-sm font-semibold">MATERIALS REQUIRED</div>
+              <div className="text-xs text-muted-foreground">FROM RECIPE — ADJUST QTY FOR THIS BATCH IF NEEDED</div>
+            </div>
             {!productId ? (
               <p className="py-3 text-center text-xs text-muted-foreground">SELECT A PRODUCT TO SEE ITS RECIPE.</p>
-            ) : preview.length === 0 ? (
+            ) : inputs.length === 0 ? (
               <p className="py-3 text-center text-xs text-warning-foreground">
                 THIS PRODUCT HAS NO RECIPE. ADD ONE IN PRODUCT MASTER.
               </p>
@@ -231,24 +254,39 @@ export default function Production(): JSX.Element {
                 <TableHeader>
                   <TableRow>
                     <TableHead>MATERIAL</TableHead>
-                    <TableHead className="text-right">REQUIRED</TableHead>
+                    <TableHead className="text-right">QTY TO USE</TableHead>
                     <TableHead className="text-right">IN STOCK</TableHead>
                     <TableHead className="text-right">STATUS</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {preview.map((p, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="font-medium">{p.component_name}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatQty(p.required)} {p.component_unit}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{formatQty(p.available)}</TableCell>
-                      <TableCell className="text-right">
-                        {p.short ? <Badge variant="destructive">SHORT</Badge> : <Badge variant="success">OK</Badge>}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {inputs.map((r, i) => {
+                    const short = Number(r.quantity) > r.available + 1e-9
+                    return (
+                      <TableRow key={i}>
+                        <TableCell className="font-medium">{r.component_name}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-end gap-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.001"
+                              value={r.quantity}
+                              onChange={(e) =>
+                                setInputs((rows) => rows.map((x, idx) => (idx === i ? { ...x, quantity: e.target.value } : x)))
+                              }
+                              className="h-8 w-24 text-right"
+                            />
+                            <span className="w-10 text-left text-xs text-muted-foreground">{r.component_unit}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{formatQty(r.available)}</TableCell>
+                        <TableCell className="text-right">
+                          {short ? <Badge variant="destructive">SHORT</Badge> : <Badge variant="success">OK</Badge>}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -258,7 +296,7 @@ export default function Production(): JSX.Element {
             <Button variant="outline" onClick={() => setOpen(false)}>
               CANCEL
             </Button>
-            <Button onClick={save} disabled={saving || !productId || preview.length === 0 || anyShort}>
+            <Button onClick={save} disabled={saving || !productId || inputs.length === 0 || anyShort}>
               <Check /> {saving ? 'PRODUCING…' : anyShort ? 'NOT ENOUGH STOCK' : 'RUN PRODUCTION'}
             </Button>
           </DialogFooter>

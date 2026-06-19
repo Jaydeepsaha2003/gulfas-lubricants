@@ -62,7 +62,8 @@ const PRODUCT_COLUMNS = [
   { header: 'PURCHASE_PRICE', key: 'purchase_price', width: 16 },
   { header: 'SALE_PRICE', key: 'sale_price', width: 14 },
   { header: 'REORDER_LEVEL', key: 'reorder_level', width: 14 },
-  { header: 'RECIPE_OUTPUT_QTY', key: 'recipe_output_qty', width: 18 }
+  { header: 'RECIPE_OUTPUT_QTY', key: 'recipe_output_qty', width: 18 },
+  { header: 'UNITS_PER_BOX', key: 'units_per_box', width: 14 }
 ]
 
 export async function exportProducts(win: BrowserWindow | null): Promise<{ saved: boolean; path?: string }> {
@@ -82,7 +83,8 @@ export async function downloadProductTemplate(win: BrowserWindow | null): Promis
       purchase_price: 8,
       sale_price: 0,
       reorder_level: 500,
-      recipe_output_qty: 1
+      recipe_output_qty: 1,
+      units_per_box: 1
     },
     {
       code: 'FG-ENGINE-OIL-1L',
@@ -94,7 +96,8 @@ export async function downloadProductTemplate(win: BrowserWindow | null): Promis
       purchase_price: 0,
       sale_price: 250,
       reorder_level: 50,
-      recipe_output_qty: 1
+      recipe_output_qty: 1,
+      units_per_box: 12
     }
   ]
   return exportRows(win, 'Products', 'PRODUCTS_TEMPLATE.xlsx', PRODUCT_COLUMNS, sample)
@@ -160,6 +163,7 @@ export async function importProducts(win: BrowserWindow | null): Promise<ImportR
         sale_price: NUM(cellVal(row, 'SALE_PRICE')),
         reorder_level: NUM(cellVal(row, 'REORDER_LEVEL')),
         recipe_output_qty: NUM(cellVal(row, 'RECIPE_OUTPUT_QTY')) || 1,
+        units_per_box: NUM(cellVal(row, 'UNITS_PER_BOX')) || 1,
         is_active: 1
       }
       const existing = all<{ id: number }>('SELECT id FROM products WHERE code = ?', [code])[0]

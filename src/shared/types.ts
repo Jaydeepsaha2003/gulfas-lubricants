@@ -48,6 +48,7 @@ export interface Product {
   sale_price: number
   reorder_level: number
   recipe_output_qty: number // for FINISHED: std units produced per recipe run
+  units_per_box: number // for FINISHED: how many units fit in one box (1 = sold individually)
   is_active: number // 0/1
   created_at: string
   updated_at: string

@@ -75,8 +75,13 @@ so renderer code can just `try/await/catch` and `toast.error(e.message)`.
   Company `gst_pricing_mode` = `INCLUSIVE` or `EXCLUSIVE`.
 - **Costing: FIFO.** Stock is held in dated `stock_lots` (qty_remaining + unit_cost). `consumeFIFO()`
   draws from oldest lots first; `addLot()` adds stock. Production and Sales use these for true cost.
-- **Recipes (BOM): fixed per finished product** in `product_recipes`, editable per production batch.
-  `products.recipe_output_qty` = standard units produced per recipe run.
+- **Recipes (BOM): fixed per finished product** in `product_recipes`, editable per production batch
+  (the Production dialog pre-fills scaled quantities but each can be overridden; the override is sent
+  as `inputs` to `productionRepo.create`). `products.recipe_output_qty` = standard units per recipe run.
+- **Packaging / box selling.** Finished products carry `products.units_per_box`. A sale line can be
+  `EACH` or `BOX`; choosing BOX multiplies quantity by the pack size to get base units, which is what
+  FIFO consumes. `sale_items` stores `uom` + `pack_size` + `base_quantity`; quantity-based reports use
+  `base_quantity`.
 
 ## Commands
 

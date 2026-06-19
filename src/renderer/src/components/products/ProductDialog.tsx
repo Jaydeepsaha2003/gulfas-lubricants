@@ -43,6 +43,7 @@ interface FormState {
   sale_price: string
   reorder_level: string
   recipe_output_qty: string
+  units_per_box: string
 }
 
 const emptyForm = (): FormState => ({
@@ -55,7 +56,8 @@ const emptyForm = (): FormState => ({
   purchase_price: '0',
   sale_price: '0',
   reorder_level: '0',
-  recipe_output_qty: '1'
+  recipe_output_qty: '1',
+  units_per_box: '1'
 })
 
 export function ProductDialog({
@@ -88,7 +90,8 @@ export function ProductDialog({
         purchase_price: String(product.purchase_price),
         sale_price: String(product.sale_price),
         reorder_level: String(product.reorder_level),
-        recipe_output_qty: String(product.recipe_output_qty)
+        recipe_output_qty: String(product.recipe_output_qty),
+        units_per_box: String(product.units_per_box ?? 1)
       })
       if (product.type === 'FINISHED') {
         window.api.recipes
@@ -169,6 +172,7 @@ export function ProductDialog({
         sale_price: Number(form.sale_price) || 0,
         reorder_level: Number(form.reorder_level) || 0,
         recipe_output_qty: Number(form.recipe_output_qty) || 1,
+        units_per_box: Number(form.units_per_box) || 1,
         is_active: 1
       }
       const saved = product
@@ -267,6 +271,11 @@ export function ProductDialog({
           <Field label="REORDER LEVEL" hint="LOW-STOCK ALERT THRESHOLD">
             <Input type="number" min="0" step="0.01" value={form.reorder_level} onChange={(e) => set('reorder_level', e.target.value)} />
           </Field>
+          {isFinished && (
+            <Field label="UNITS PER BOX" hint="UNITS IN ONE BOX (1 = SOLD INDIVIDUALLY)">
+              <Input type="number" min="1" step="1" value={form.units_per_box} onChange={(e) => set('units_per_box', e.target.value)} />
+            </Field>
+          )}
         </div>
 
         {/* Recipe / BOM (finished products only) */}

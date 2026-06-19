@@ -3,6 +3,7 @@ export interface LineInput {
   quantity: string
   rate: string
   gst_rate: string
+  uom?: 'EACH' | 'BOX'
 }
 
 export interface LineCalc {

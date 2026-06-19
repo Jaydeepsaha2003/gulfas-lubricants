@@ -136,6 +136,7 @@ function createSchema(): void {
     sale_price REAL NOT NULL DEFAULT 0,
     reorder_level REAL NOT NULL DEFAULT 0,
     recipe_output_qty REAL NOT NULL DEFAULT 1,
+    units_per_box REAL NOT NULL DEFAULT 1,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -278,6 +279,9 @@ function createSchema(): void {
     product_id INTEGER NOT NULL REFERENCES products(id),
     quantity REAL NOT NULL,
     rate REAL NOT NULL,
+    uom TEXT NOT NULL DEFAULT 'EACH',
+    pack_size REAL NOT NULL DEFAULT 1,
+    base_quantity REAL DEFAULT 0,
     gst_rate REAL NOT NULL DEFAULT 0,
     taxable_value REAL NOT NULL DEFAULT 0,
     cgst REAL NOT NULL DEFAULT 0,
@@ -306,16 +310,24 @@ function createSchema(): void {
   `)
 }
 
-/** Add columns introduced after the first release to existing databases. */
-function ensureColumn(table: string, column: string, ddl: string): void {
+/** Add columns introduced after the first release to existing databases. Returns true if added. */
+function ensureColumn(table: string, column: string, ddl: string): boolean {
   const cols = all<{ name: string }>(`PRAGMA table_info(${table})`)
   if (!cols.some((c) => c.name === column)) {
     run(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
+    return true
   }
+  return false
 }
 
 function migrate(): void {
   ensureColumn('company', 'doc_numbering', "doc_numbering TEXT NOT NULL DEFAULT 'AUTOMATIC'")
+  ensureColumn('products', 'units_per_box', 'units_per_box REAL NOT NULL DEFAULT 1')
+  ensureColumn('sale_items', 'uom', "uom TEXT NOT NULL DEFAULT 'EACH'")
+  ensureColumn('sale_items', 'pack_size', 'pack_size REAL NOT NULL DEFAULT 1')
+  if (ensureColumn('sale_items', 'base_quantity', 'base_quantity REAL DEFAULT 0')) {
+    run('UPDATE sale_items SET base_quantity = quantity')
+  }
 }
 
 function seed(): void {
@@ -467,11 +479,11 @@ export const productRepo = {
   create(p: Record<string, SqlValue>) {
     const id = insert(
       `INSERT INTO products (code, name, type, unit_id, hsn_code, gst_rate, purchase_price, sale_price,
-        reorder_level, recipe_output_qty, is_active, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        reorder_level, recipe_output_qty, units_per_box, is_active, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         p.code, p.name, p.type, p.unit_id, p.hsn_code, p.gst_rate, p.purchase_price, p.sale_price,
-        p.reorder_level, p.recipe_output_qty, p.is_active ?? 1, now(), now()
+        p.reorder_level, p.recipe_output_qty, p.units_per_box ?? 1, p.is_active ?? 1, now(), now()
       ]
     )
     save()
@@ -480,10 +492,10 @@ export const productRepo = {
   update(id: number, p: Record<string, SqlValue>) {
     run(
       `UPDATE products SET code=?, name=?, type=?, unit_id=?, hsn_code=?, gst_rate=?, purchase_price=?,
-        sale_price=?, reorder_level=?, recipe_output_qty=?, is_active=?, updated_at=? WHERE id=?`,
+        sale_price=?, reorder_level=?, recipe_output_qty=?, units_per_box=?, is_active=?, updated_at=? WHERE id=?`,
       [
         p.code, p.name, p.type, p.unit_id, p.hsn_code, p.gst_rate, p.purchase_price, p.sale_price,
-        p.reorder_level, p.recipe_output_qty, p.is_active ?? 1, now(), id
+        p.reorder_level, p.recipe_output_qty, p.units_per_box ?? 1, p.is_active ?? 1, now(), id
       ]
     )
     save()
@@ -797,11 +809,16 @@ export const saleRepo = {
       const cust = one<{ state_code: string }>('SELECT state_code FROM customers WHERE id = ?', [h.customer_id])
       const inter = !!cust?.state_code && cust.state_code !== companyStateCode()
       const mode = h.gst_pricing_mode || 'EXCLUSIVE'
+      const baseUnits = (it: any): number => {
+        const ups = one<{ units_per_box: number }>('SELECT units_per_box FROM products WHERE id = ?', [it.product_id])?.units_per_box || 1
+        return (Number(it.quantity) || 0) * (it.uom === 'BOX' ? ups : 1)
+      }
       for (const it of h.items || []) {
         const qty = Number(it.quantity) || 0
         if (qty <= 0 || !it.product_id) continue
-        if (available(it.product_id) < qty - 1e-9) {
-          throw new Error(`INSUFFICIENT STOCK TO SELL ${nameOf(it.product_id)} (NEED ${qty}, HAVE ${available(it.product_id)})`)
+        const need = baseUnits(it)
+        if (available(it.product_id) < need - 1e-9) {
+          throw new Error(`INSUFFICIENT STOCK TO SELL ${nameOf(it.product_id)} (NEED ${need}, HAVE ${available(it.product_id)})`)
         }
       }
       const sid = insert(
@@ -815,12 +832,16 @@ export const saleRepo = {
         const rate = Number(it.rate) || 0
         const gr = Number(it.gst_rate) || 0
         if (qty <= 0 || !it.product_id) continue
+        const ups = one<{ units_per_box: number }>('SELECT units_per_box FROM products WHERE id = ?', [it.product_id])?.units_per_box || 1
+        const uom = it.uom === 'BOX' ? 'BOX' : 'EACH'
+        const packSize = uom === 'BOX' ? ups : 1
+        const baseQty = qty * packSize
         const L = computeLine(qty, rate, gr, mode, inter)
-        const cogs = consumeFIFO(it.product_id, qty, 'SALE', sid, h.sale_date)
+        const cogs = consumeFIFO(it.product_id, baseQty, 'SALE', sid, h.sale_date)
         insert(
-          `INSERT INTO sale_items (sale_id, product_id, quantity, rate, gst_rate, taxable_value, cgst, sgst, igst, line_total, cogs)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-          [sid, it.product_id, qty, rate, gr, L.taxable, L.cgst, L.sgst, L.igst, L.lineTotal, cogs.cost]
+          `INSERT INTO sale_items (sale_id, product_id, quantity, rate, uom, pack_size, base_quantity, gst_rate, taxable_value, cgst, sgst, igst, line_total, cogs)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [sid, it.product_id, qty, rate, uom, packSize, baseQty, gr, L.taxable, L.cgst, L.sgst, L.igst, L.lineTotal, cogs.cost]
         )
         taxable += L.taxable; cgst += L.cgst; sgst += L.sgst; igst += L.igst; total += L.lineTotal; cogsTotal += cogs.cost
       }
@@ -918,7 +939,7 @@ export const reportRepo = {
       [f, t]
     )!
     const units = one<{ q: number }>(
-      'SELECT COALESCE(SUM(si.quantity),0) AS q FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.sale_date BETWEEN ? AND ?',
+      'SELECT COALESCE(SUM(COALESCE(NULLIF(si.base_quantity,0), si.quantity)),0) AS q FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.sale_date BETWEEN ? AND ?',
       [f, t]
     )!
     const grossProfit = sales.rev - sales.cogs
@@ -946,7 +967,7 @@ export const reportRepo = {
       })
 
     const topProducts = all(
-      `SELECT p.name, SUM(si.quantity) AS qty, SUM(si.taxable_value) AS revenue, SUM(si.taxable_value - si.cogs) AS profit
+      `SELECT p.name, SUM(COALESCE(NULLIF(si.base_quantity,0), si.quantity)) AS qty, SUM(si.taxable_value) AS revenue, SUM(si.taxable_value - si.cogs) AS profit
        FROM sale_items si JOIN products p ON p.id = si.product_id JOIN sales s ON s.id = si.sale_id
        WHERE s.sale_date BETWEEN ? AND ? GROUP BY si.product_id ORDER BY revenue DESC LIMIT 8`,
       [f, t]
